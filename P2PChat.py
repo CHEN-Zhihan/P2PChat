@@ -1,15 +1,16 @@
 #!/usr/bin/python3
 
-# Student name and No.:
-# Development platform:
-# Python version:
+# Student name and No.: CHEN Zhihan, 3035142261
+# Development platform: Ubuntu 16.04 64 bit
+# Python version: Python 3.5.2
 # Version:
 
 
 from tkinter import *
 import sys
 import socket
-
+from threading import Thread
+from time import sleep
 #
 # Global variables
 #
@@ -22,6 +23,29 @@ import socket
 # and str(Port) to form the input to this hash function
 #
 
+START_STATE = 0
+NAMED_STATE = 1
+JOINED_STATE = 2
+CONNECTED_STATE = 3
+TERMINATED_STATE = 4
+
+class ListException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+
+class UnnamedException(Exception):
+    pass
+
+
+class JoinedException(Exception):
+    pass
+
+
+class JoinException(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
 
 def sdbm_hash(instr):
     hash = 0
@@ -30,10 +54,108 @@ def sdbm_hash(instr):
     return hash & 0xffffffffffffffff
 
 
+class Member(object):
+    def __init__(self, name, ip, port):
+        self.name = name
+        self.ip = ip[0]
+        self.port = port
+
+
+class AliveKeeper(Thread):
+    def __init__(self, P2PChat):
+        Thread.__init__(self)
+        self.P2PChat = P2PChat
+
+    def run(self):
+        while self.P2PChat.state != TERMINATED_STATE:
+            sleep(20)
+            self.P2PChat.doJoin(self.P2PChat.room)
+
+
 class P2PChat(object):
     def __init__(self, argv):
-        self.roomServer = (argv[1], int(argv[2]))
         self.port = int(argv[3])
+        self.forward = None
+        self.backwards = []
+        self.username = None
+        self.room = None
+        self.members = ("", [])
+        self.id = None
+        self.roomServer = None
+        self._connect((argv[1], int(argv[2])))
+        self.state = START_STATE
+        self.aliveKeeper = None
+
+    def _connect(self, roomServer):
+        self.roomServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.roomServer.connect(roomServer)
+
+    def _request(self, message):
+        message += "::\r\n"
+        self.roomServer.send(message.encode("ascii"))
+        print("{} sent to room server".format(message))
+        done = False
+        received = ""
+        while not done:
+            m = self.roomServer.recv(1024)
+            received += m.decode("ascii")
+            if len(received) > 4 and received[-4:] == "::\r\n":
+                done = True
+        print("{} received from room server".format(received))
+        return received[:-4]
+
+    def _parseJoin(self, message):
+        result = message.split(':')
+        MSID = result[0]
+        if self.members[0] != MSID:
+            members = []
+            i = 1
+            while i != len(result):
+                members.append(Member(result[i], result[i + 1], int(result[i + 2])))
+                i += 3
+            self.members = (MSID, members)
+        return self.members[1]
+
+    def doList(self):
+        message = self._request("L")
+        if message[0] == 'F':
+            raise ListException(message[2:])
+        if len(message) == 1:
+            return []
+        else:
+            return message[2:].split(':')
+
+    def doUser(self, name):
+        if self.state < 2:
+            self.username = name
+            self.state = NAMED_STATE
+            return True
+        else:
+            raise JoinedException()
+
+    def doJoin(self, room):
+        if self.state >= 1:
+            request = "J:{}:{}:{}:{}".format(room, self.username,
+                                             self.roomServer.getsockname(),
+                                             self.port)
+            message = self._request(request)
+            if message[0] == 'F':
+                raise JoinException(message[2:])
+            else:
+                result = self._parseJoin(message[2:])
+                self.room = room
+                if self.aliveKeeper is None:
+                    self.state = JOINED_STATE
+                    self.aliveKeeper = AliveKeeper(self)
+                    self.aliveKeeper.start()
+                return result
+        else:
+            raise UnnamedException()
+
+    def doQuit(self):
+        self.state = TERMINATED_STATE
+        if self.aliveKeeper is not None:
+            self.aliveKeeper.join()
 
 
 class P2PChatUI(object):
@@ -49,8 +171,8 @@ class P2PChatUI(object):
         topframe = Frame(win, relief=RAISED, borderwidth=1)
         topframe.pack(fill=BOTH, expand=True)
         topscroll = Scrollbar(topframe)
-        self.MsgWin = Text(topframe, height='15', padx=5,
-                           pady=5, fg="red", exportselection=0, insertofftime=0)
+        self.MsgWin = Text(topframe, height='15', padx=5, pady=5,
+                           fg="red", exportselection=0, insertofftime=0)
         self.MsgWin.pack(side=LEFT, fill=BOTH, expand=True)
         topscroll.pack(side=RIGHT, fill=Y, expand=True)
         self.MsgWin.config(yscrollcommand=topscroll.set)
@@ -93,23 +215,54 @@ class P2PChatUI(object):
         bottscroll.config(command=self.CmdWin.yview)
         win.mainloop()
 
+    def _writeCmd(self, msg):
+        self.CmdWin.insert(1.0, "\n{}".format(msg))
+
     # Functions to handle user input
+
     def do_User(self):
-        outstr = "\n[User] username: "+self.userentry.get()
-        self.CmdWin.insert(1.0, outstr)
+        user = self.userentry.get()
+        if len(user) > 0 and all(map((lambda x: x != ':'), user)):
+            try:
+                self.chat.doUser(user)
+            except JoinedException:
+                self._writeCmd("JOINED ALready")
+            else:
+                outstr = "\n[User] username: "+self.userentry.get()
+                self.CmdWin.insert(1.0, outstr)
+        else:
+            self._writeCmd("incorrect username")
         self.userentry.delete(0, END)
 
     def do_List(self):
-        self.CmdWin.insert(1.0, "\nPress List")
+        try:
+            l = self.chat.doList()
+        except ListException as e:
+            self._writeCmd(e.msg)
+        else:
+            for room in l:
+                self._writeCmd(room)
+            self._writeCmd("List all rooms:")
 
     def do_Join(self):
-        self.CmdWin.insert(1.0, "\nPress JOIN")
+        room = self.userentry.get()
+        if len(room) != 0:
+            try:
+                result = self.chat.doJoin(room)
+            except UnnamedException:
+                self._writeCmd("unnamed!")
+            except JoinException as e:
+                self._writeCmd("[Error]{}".format(e.msg))
+            self.userentry.delete(0, END)
+        else:
+            self._writeCmd("Empty room name")
 
     def do_Send(self):
         self.CmdWin.insert(1.0, "\nPress Send")
 
     def do_Quit(self):
         self.CmdWin.insert(1.0, "\nPress Quit")
+        self.chat.doQuit()
         sys.exit(0)
 
 

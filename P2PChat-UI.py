@@ -26,10 +26,10 @@ import socket
 # and str(Port) to form the input to this hash function
 #
 def sdbm_hash(instr):
-	hash = 0
-	for c in instr:
-		hash = int(ord(c)) + (hash << 6) + (hash << 16) - hash
-	return hash & 0xffffffffffffffff
+    hash = 0
+    for c in instr:
+        hash = int(ord(c)) + (hash << 6) + (hash << 16) - hash
+    return hash & 0xffffffffffffffff
 
 
 #
@@ -37,26 +37,26 @@ def sdbm_hash(instr):
 #
 
 def do_User():
-	outstr = "\n[User] username: "+userentry.get()
-	CmdWin.insert(1.0, outstr)
-	userentry.delete(0, END)
+    outstr = "\n[User] username: "+userentry.get()
+    CmdWin.insert(1.0, outstr)
+    userentry.delete(0, END)
 
 
 def do_List():
-	CmdWin.insert(1.0, "\nPress List")
+    CmdWin.insert(1.0, "\nPress List")
 
 
 def do_Join():
-	CmdWin.insert(1.0, "\nPress JOIN")
+    CmdWin.insert(1.0, "\nPress JOIN")
 
 
 def do_Send():
-	CmdWin.insert(1.0, "\nPress Send")
+    CmdWin.insert(1.0, "\nPress Send")
 
 
 def do_Quit():
-	CmdWin.insert(1.0, "\nPress Quit")
-	sys.exit(0)
+    CmdWin.insert(1.0, "\nPress Quit")
+    sys.exit(0)
 
 #
 # Set up of Basic UI
@@ -105,12 +105,12 @@ CmdWin.config(yscrollcommand=bottscroll.set)
 bottscroll.config(command=CmdWin.yview)
 
 def main():
-	if len(sys.argv) != 4:
-		print("P2PChat.py <server address> <server port no.> <my port no.>")
-		sys.exit(2)
+    if len(sys.argv) != 4:
+        print("P2PChat.py <server address> <server port no.> <my port no.>")
+        sys.exit(2)
 
-	win.mainloop()
+    win.mainloop()
 
 if __name__ == "__main__":
-	main()
+    main()
 
