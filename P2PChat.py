@@ -20,6 +20,7 @@ START_STATE = 0
 NAMED_STATE = 1
 JOINED_STATE = 2
 CONNECTED_STATE = 3
+DO_JOIN = 0
 #
 # This is the hash function for generating a unique
 # Hash ID for each peer.
@@ -37,6 +38,18 @@ def sdbm_hash(instr):
     return hash & 0xffffffffffffffff
 
 
+class UnnamedException(Exception):
+    pass
+
+
+class UnjoinedException(Exception):
+    pass
+
+
+class JoinedException(Exception):
+    pass
+
+
 class AliveKeeper(Thread):
     def __init__(self, manager):
         Thread.__init__(self)
@@ -46,9 +59,9 @@ class AliveKeeper(Thread):
 
     def run(self):
         while self._running:
-            self._manager.put(0)
+            self._manager.put(DO_JOIN)
             self._condition.acquire()
-            self._condition.wait()
+            self._condition.wait(20)
             self._condition.release()
 
     def shutdown(self):
@@ -56,6 +69,7 @@ class AliveKeeper(Thread):
         self._condition.acquire()
         self._condition.notify()
         self._condition.release()
+        self.join()
 
 
 class PeerListener(Thread):
@@ -85,13 +99,31 @@ class PeerHandler(Thread):
 
 
 class NetworkManager(Thread):
-    def __init__(self, P2PChat):
+    def __init__(self, P2PChat, roomServer, port):
         Thread.__init__(self)
-        self.chat = P2PChat
-        self.queue = Queue(maxsize=5)
+        self._chat = P2PChat
+        self._queue = Queue(maxsize=5)
+        self._serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._serverSocket.connect(roomServer)
+        self._aliveKeeper = None
+
+    def _request(self, message):
+        send = message + "::\r\n"
+        self._serverSocket.send(send.encode("ascii"))
+        print("[Sent to server]: " + message)
+        received = ""
+        while True:
+            m = self._serverSocket.recv(1024)
+            received += m.decode("ascii")
+            if len(received) > 4 and received[-4:] == "::\r\n":
+                print("[Received from server]: " + received[:-4])
+                return received[:-4]
 
     def run(self):
-        pass
+        while True:
+            item = self._queue.get()
+            if item is None:
+                break
 
     def doJoin(self):
         pass
@@ -100,35 +132,54 @@ class NetworkManager(Thread):
         pass
 
     def shutdown(self):
-        pass
+        self._serverSocket.close()
+        self.put(None)
+        if self._aliveKeeper is not None:
+            self._aliveKeeper.shutdown()
+        self.join()
 
     def put(self, message):
-        pass
+        self._queue.put(message)
+
+    def do_List(self):
+        received = self._request("L")
+        result = []
+        if len(received) != 1:
+            result = received[2:].split(':')
+        return result
 
 
 class P2PChat(object):
     def __init__(self, argv, observer):
-        self.server = (argv[0], int(argv[1]))
-        self.port = int(argv[2])
-        self.state = START_STATE
+        self._state = START_STATE
+        self._name = None
+        self._room = None
+        self._manager = NetworkManager(self,
+                                       (argv[1], int(argv[2])), int(argv[3]))
+        self._manager.start()
 
     def receive(self, message):
         pass
 
-    def do_Join(self):
+    def do_Join(self, roomname):
         pass
 
     def do_List(self):
-        pass
+        return self._manager.do_List()
 
     def do_Quit(self):
-        pass
+        self._manager.shutdown()
 
     def do_Send(self, message):
         pass
 
     def do_User(self, message):
-        pass
+        if self._state > NAMED_STATE:
+            raise JoinedException()
+        self._name = message
+
+    def getRoom(self):
+        return self._room
 
 
 class P2PChatUI(object):
@@ -136,6 +187,7 @@ class P2PChatUI(object):
         #
         # Set up of Basic UI
         #
+        self._chat = P2PChat(argv, self)
         win = Tk()
         win.title("MyP2PChat")
 
@@ -191,7 +243,7 @@ class P2PChatUI(object):
     #
 
     def do_Quit(self):
-        self.CmdWin.insert(1.0, "\nPress Quit")
+        self._chat.do_Quit()
         sys.exit(0)
 
     def do_Send(self):
@@ -201,12 +253,32 @@ class P2PChatUI(object):
         self.CmdWin.insert(1.0, "\nPress JOIN")
 
     def do_List(self):
-        self.CmdWin.insert(1.0, "\nPress List")
+        result = self._chat.do_List()
+        if not result:
+            self._cmd("[LIST] No chatroom available")
+        else:
+            for i in result:
+                self._cmd(i)
+            self._cmd("[LIST] list all chatroom(s)")
 
     def do_User(self):
-        outstr = "\n[User] username: " + self.userentry.get()
-        self.CmdWin.insert(1.0, outstr)
+        username = self.userentry.get()
+        if self._valid(username):
+            try:
+                self._chat.do_User(username)
+            except JoinedException:
+                self._cmd("[ERROR] Cannot Rename after Join")
+            else:
+                self._cmd("[USER] username: " + username)
+        else:
+            self._cmd("[ERROR] Invalid username")
         self.userentry.delete(0, END)
+
+    def _cmd(self, message):
+        self.CmdWin.insert(1.0, "\n" + message)
+
+    def _valid(self, name):
+        return len(name) != 0 and all(map((lambda x: x != ':'), name))
 
 
 def main():
