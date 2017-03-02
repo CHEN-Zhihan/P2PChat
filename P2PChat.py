@@ -20,7 +20,6 @@ NAMED_STATE = 1
 JOINED_STATE = 2
 CONNECTED_STATE = 3
 DO_JOIN = 0
-INITIAL_LIST = 0
 ADD = 1
 REMOVE = 2
 #
@@ -53,6 +52,9 @@ class JoinedException(Exception):
 
 
 class RemoteException(Exception):
+    """
+    Exception on the room server
+    """
     def __init__(self, msg):
         self._msg = msg
 
@@ -61,6 +63,9 @@ class RemoteException(Exception):
 
 
 class Member(object):
+    """
+    Abstraction of all members in a chat room
+    """
     def __init__(self, name, ip, port):
         self._name = name
         self._ip = ip
@@ -76,6 +81,9 @@ class Member(object):
 
 
 class AliveKeeper(Thread):
+    """
+    A seprate thread for KEEPALIVE
+    """
     def __init__(self, manager):
         Thread.__init__(self)
         self._manager = manager
@@ -98,6 +106,9 @@ class AliveKeeper(Thread):
 
 
 class PeerListener(Thread):
+    """
+    A thread listening connections from other peers
+    """
     def __init__(self, manager):
         Thread.__init__(self)
         self._manager = manager
@@ -111,6 +122,9 @@ class PeerListener(Thread):
 
 
 class PeerHandler(Thread):
+    """
+    A handling thread for listening a specific peer
+    """
     def __init__(self, manager):
         Thread.__init__(self)
         self._manager = manager
@@ -124,6 +138,10 @@ class PeerHandler(Thread):
 
 
 class NetworkManager(Thread):
+    """
+    A separate thread for commnunication works between localhost, roomServer,
+    and other peers.
+    """
     def __init__(self, P2PChat, roomServer, port):
         Thread.__init__(self)
         self._members = {}
@@ -139,6 +157,9 @@ class NetworkManager(Thread):
         self._MSID = ""
 
     def _request(self, message):
+        """
+        send and receive information to and from room server.
+        """
         send = message + "::\r\n"
         self._serverSocket.send(send.encode("ascii"))
         print("[Sent to server]: " + message)
@@ -151,6 +172,10 @@ class NetworkManager(Thread):
                 return received[:-4]
 
     def _parseJoin(self, received):
+        """
+        process and update the membership list stored locally.
+        And if necessary, inform observer to update correspondingly.
+        """
         result = received.split(':')
         MSID = result[0]
         if MSID != self._MSID:
@@ -169,6 +194,9 @@ class NetworkManager(Thread):
                 self._chat.update((REMOVE, removed))
 
     def run(self):
+        """
+        process jobs submitted from other threads
+        """
         while True:
             item = self._queue.get()
             if item is None:
@@ -177,9 +205,16 @@ class NetworkManager(Thread):
                 self._doJoin()
 
     def do_Join(self):
+        """
+        start the aliveKeeper, which will send a JOIN request to room server.
+        """
         self._aliveKeeper.start()
 
     def _doJoin(self):
+        """
+        send and receive JOIN request and response.
+        This is mainly for private use, handling JOIN request submitted from other threads.
+        """
         request = "J:{}:{}:{}:{}".format(self._room, self._name,
                                          self._localhost, self._port)
         received = self._request(request)
@@ -198,9 +233,16 @@ class NetworkManager(Thread):
         self.join()
 
     def put(self, message):
+        """
+        submit a job to NetworkManager
+        """
         self._queue.put(message)
 
     def do_List(self):
+        """
+        send a LIST request to server, receive the response and process.
+        return a list of chatrooms available.
+        """
         received = self._request("L")
         if received[0] == 'F':
             raise RemoteException(received[2:])
@@ -210,6 +252,9 @@ class NetworkManager(Thread):
         return result
 
     def setInfo(self, name, room):
+        """
+        set information for future JOIN request.
+        """
         self._name = name
         self._room = room
 
@@ -227,13 +272,17 @@ class P2PChat(object):
         pass
 
     def do_Join(self, roomname):
+        """
+        Check the state, if it is named and unjoined,
+        give NetworkManager corresponding information and
+        call do_Join(). Update state afterwards.
+        """
         if self._state >= JOINED_STATE:
             raise JoinedException()
         if self._state == START_STATE:
             raise UnnamedException()
         self._manager.setInfo(self._name, roomname)
         self._manager.do_Join()
-        self._room = roomname
         self._state = JOINED_STATE
 
     def do_List(self):
@@ -246,12 +295,19 @@ class P2PChat(object):
         pass
 
     def do_User(self, message):
+        """
+        Check the state, if it hasn't joined, update name and update
+        the state.
+        """
         if self._state > NAMED_STATE:
             raise JoinedException()
         self._name = message
         self._state = NAMED_STATE
 
     def update(self, l):
+        """
+        Inform GUI there's an update.
+        """
         self._observer.update(l)
 
 
@@ -324,6 +380,10 @@ class P2PChatUI(object):
         self.CmdWin.insert(1.0, "\nPress Send")
 
     def do_Join(self):
+        """
+        Validate the input, and call P2PChat's do_Join.
+        Handle exception and print errors.
+        """
         room = self.userentry.get()
         if self._valid(room):
             try:
@@ -337,6 +397,10 @@ class P2PChatUI(object):
         self.userentry.delete(0, END)
 
     def do_List(self):
+        """
+        Call P2PChat's do_List.
+        Handle exception and print results.
+        """
         try:
             result = self._chat.do_List()
         except RemoteException as e:
@@ -350,6 +414,10 @@ class P2PChatUI(object):
                 self._cmd("[LIST] list all chatroom(s)")
 
     def do_User(self):
+        """
+        Validate the input, and call P2PChat's do_User.
+        Handle exception and print errors.
+        """
         username = self.userentry.get()
         if self._valid(username):
             try:
@@ -363,12 +431,21 @@ class P2PChatUI(object):
         self.userentry.delete(0, END)
 
     def _cmd(self, message):
+        """
+        Print to command window.
+        """
         self.CmdWin.insert(1.0, "\n" + message)
 
     def _valid(self, name):
+        """
+        Validate information
+        """
         return len(name) != 0 and all(map((lambda x: x != ':'), name))
 
     def update(self, message):
+        """
+        Print updated information.
+        """
         if message[0] == ADD:
             for i in message[1]:
                 self._cmd(i)
