@@ -21,6 +21,9 @@ NAMED_STATE = 1
 JOINED_STATE = 2
 CONNECTED_STATE = 3
 DO_JOIN = 0
+INITIAL_LIST = 0
+ADD = 1
+REMOVE = 2
 #
 # This is the hash function for generating a unique
 # Hash ID for each peer.
@@ -48,6 +51,29 @@ class UnjoinedException(Exception):
 
 class JoinedException(Exception):
     pass
+
+
+class RemoteException(Exception):
+    def __init__(self, msg):
+        self._msg = msg
+
+    def __str__(self):
+        return self._msg
+
+
+class Member(object):
+    def __init__(self, name, ip, port):
+        self._name = name
+        self._ip = ip
+        self._port = port
+        self._msgID = 0
+        self._ID = sdbm_hash("{}{}{}".format(name, ip, port))
+
+    def getID(self):
+        return self._ID
+
+    def getName(self):
+        return self._name
 
 
 class AliveKeeper(Thread):
@@ -101,11 +127,17 @@ class PeerHandler(Thread):
 class NetworkManager(Thread):
     def __init__(self, P2PChat, roomServer, port):
         Thread.__init__(self)
+        self._members = {}
         self._chat = P2PChat
         self._queue = Queue(maxsize=5)
         self._serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._serverSocket.connect(roomServer)
-        self._aliveKeeper = None
+        self._localhost = self._serverSocket.getsockname()[0]
+        self._port = port
+        self._aliveKeeper = AliveKeeper(self)
+        self._forward = None
+        self._backwards = []
+        self._MSID = ""
 
     def _request(self, message):
         send = message + "::\r\n"
@@ -119,14 +151,42 @@ class NetworkManager(Thread):
                 print("[Received from server]: " + received[:-4])
                 return received[:-4]
 
+    def _parseJoin(self, received):
+        result = received.split(':')
+        MSID = result[0]
+        if MSID != self._MSID:
+            temp = {}
+            i = 1
+            while i != len(result):
+                m = Member(result[i], result[i + 1], int(result[i + 2]))
+                temp[m.getID()] = m
+                i += 3
+            added = [temp[m].getName() for m in temp if m not in self._members]
+            removed = [self._members[m].getName() for m in self._members if m not in temp]
+            self._members = temp
+            if added:
+                self._chat.update((ADD, added))
+            if removed:
+                self._chat.update((REMOVE, removed))
+
     def run(self):
         while True:
             item = self._queue.get()
             if item is None:
                 break
+            if item == DO_JOIN:
+                self._doJoin()
 
-    def doJoin(self):
-        pass
+    def do_Join(self):
+        self._aliveKeeper.start()
+
+    def _doJoin(self):
+        request = "J:{}:{}:{}:{}".format(self._room, self._name,
+                                         self._localhost, self._port)
+        received = self._request(request)
+        if received[0] == 'F':
+            raise RemoteException(received[1:])
+        self._parseJoin(received[2:])
 
     def connect(self):
         pass
@@ -134,7 +194,7 @@ class NetworkManager(Thread):
     def shutdown(self):
         self._serverSocket.close()
         self.put(None)
-        if self._aliveKeeper is not None:
+        if self._aliveKeeper.is_alive():
             self._aliveKeeper.shutdown()
         self.join()
 
@@ -143,26 +203,39 @@ class NetworkManager(Thread):
 
     def do_List(self):
         received = self._request("L")
+        if received[0] == 'F':
+            raise RemoteException(received[2:])
         result = []
         if len(received) != 1:
             result = received[2:].split(':')
         return result
+
+    def setInfo(self, name, room):
+        self._name = name
+        self._room = room
 
 
 class P2PChat(object):
     def __init__(self, argv, observer):
         self._state = START_STATE
         self._name = None
-        self._room = None
         self._manager = NetworkManager(self,
                                        (argv[1], int(argv[2])), int(argv[3]))
         self._manager.start()
+        self._observer = observer
 
     def receive(self, message):
         pass
 
     def do_Join(self, roomname):
-        pass
+        if self._state >= JOINED_STATE:
+            raise JoinedException()
+        if self._state == START_STATE:
+            raise UnnamedException()
+        self._manager.setInfo(self._name, roomname)
+        self._manager.do_Join()
+        self._room = roomname
+        self._state = JOINED_STATE
 
     def do_List(self):
         return self._manager.do_List()
@@ -177,9 +250,10 @@ class P2PChat(object):
         if self._state > NAMED_STATE:
             raise JoinedException()
         self._name = message
+        self._state = NAMED_STATE
 
-    def getRoom(self):
-        return self._room
+    def update(self, l):
+        self._observer.update(l)
 
 
 class P2PChatUI(object):
@@ -188,6 +262,7 @@ class P2PChatUI(object):
         # Set up of Basic UI
         #
         self._chat = P2PChat(argv, self)
+        self._first = True
         win = Tk()
         win.title("MyP2PChat")
 
@@ -250,16 +325,30 @@ class P2PChatUI(object):
         self.CmdWin.insert(1.0, "\nPress Send")
 
     def do_Join(self):
-        self.CmdWin.insert(1.0, "\nPress JOIN")
+        room = self.userentry.get()
+        if self._valid(room):
+            try:
+                self._chat.do_Join(room)
+            except JoinedException:
+                self._cmd("[ERROR] Cannot join another room")
+            except UnnamedException:
+                self._cmd("[ERROR] Cannot join without name")
+        else:
+            self._cmd("[ERROR] Invalid roomname")
+        self.userentry.delete(0, END)
 
     def do_List(self):
-        result = self._chat.do_List()
-        if not result:
-            self._cmd("[LIST] No chatroom available")
+        try:
+            result = self._chat.do_List()
+        except RemoteException as e:
+            self._cmd("[ERROR] " + e)
         else:
-            for i in result:
-                self._cmd(i)
-            self._cmd("[LIST] list all chatroom(s)")
+            if not result:
+                self._cmd("[LIST] No chatroom available")
+            else:
+                for i in result:
+                    self._cmd(i)
+                self._cmd("[LIST] list all chatroom(s)")
 
     def do_User(self):
         username = self.userentry.get()
@@ -279,6 +368,20 @@ class P2PChatUI(object):
 
     def _valid(self, name):
         return len(name) != 0 and all(map((lambda x: x != ':'), name))
+
+    def update(self, message):
+        if message[0] == ADD:
+            if self._first:
+                self._cmd("[ROOM] List all members")
+                self._first = False
+            else:
+                self._cmd("[ROOM] joined the room")
+            for i in message[1]:
+                self._cmd(i)
+        else:
+            self._cmd("[ROOM] left the room")
+            for i in message[1]:
+                self._cmd(i)
 
 
 def main():
