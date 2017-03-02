@@ -103,7 +103,7 @@ class P2PChatUI(object):
     def do_List(self):
         self.CmdWin.insert(1.0, "\nPress List")
 
-    def do_User():
+    def do_User(self):
         outstr = "\n[User] username: " + self.userentry.get()
         self.CmdWin.insert(1.0, outstr)
         self.userentry.delete(0, END)
