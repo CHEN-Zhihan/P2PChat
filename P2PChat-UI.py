@@ -14,17 +14,16 @@ import socket
 #
 # Global variables
 #
-
-
-
 #
 # This is the hash function for generating a unique
 # Hash ID for each peer.
 # Source: http://www.cse.yorku.ca/~oz/hash.html
 #
-# Concatenate the peer's username, str(IP address), 
+# Concatenate the peer's username, str(IP address),
 # and str(Port) to form the input to this hash function
 #
+
+
 def sdbm_hash(instr):
     hash = 0
     for c in instr:
@@ -64,7 +63,7 @@ def do_Quit():
 win = Tk()
 win.title("MyP2PChat")
 
-#Top Frame for Message display
+# Top Frame for Message display
 topframe = Frame(win, relief=RAISED, borderwidth=1)
 topframe.pack(fill=BOTH, expand=True)
 topscroll = Scrollbar(topframe)
@@ -74,7 +73,7 @@ topscroll.pack(side=RIGHT, fill=Y, expand=True)
 MsgWin.config(yscrollcommand=topscroll.set)
 topscroll.config(command=MsgWin.yview)
 
-#Top Middle Frame for buttons
+# Top Middle Frame for buttons
 topmidframe = Frame(win, relief=RAISED, borderwidth=1)
 topmidframe.pack(fill=X, expand=True)
 Butt01 = Button(topmidframe, width='8', relief=RAISED, text="User", command=do_User)
