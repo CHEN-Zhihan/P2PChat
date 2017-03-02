@@ -10,7 +10,7 @@
 from tkinter import *
 import sys
 import socket
-from threading import Thread
+from threading import Thread, Condition
 from queue import Queue
 
 #
@@ -39,8 +39,49 @@ def sdbm_hash(instr):
 
 class AliveKeeper(Thread):
     def __init__(self, manager):
-        Thread.__init__(manager)
+        Thread.__init__(self)
+        self._manager = manager
         self._running = True
+        self._condition = Condition()
+
+    def run(self):
+        while self._running:
+            self._manager.put(0)
+            self._condition.acquire()
+            self._condition.wait()
+            self._condition.release()
+
+    def shutdown(self):
+        self._running = False
+        self._condition.acquire()
+        self._condition.notify()
+        self._condition.release()
+
+
+class PeerListener(Thread):
+    def __init__(self, manager):
+        Thread.__init__(self)
+        self._manager = manager
+        self._running = True
+
+    def run(self):
+        pass
+
+    def shutdown(self):
+        pass
+
+
+class PeerHandler(Thread):
+    def __init__(self, manager):
+        Thread.__init__(self)
+        self._manager = manager
+        self._running = True
+
+    def run(self):
+        pass
+
+    def shutdown(self):
+        pass
 
 
 class NetworkManager(Thread):
