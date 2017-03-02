@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
-# Student name and No.:
-# Student name and No.:
-# Development platform:
-# Python version:
-# Version:
+# Student name and No.: CHEN ZHIHAN, 3035142261
+# Development platform: Ubuntu 16.04 LTS
+# Python version: Python 3.5.2
+# Version: stage 1
 
 
 from tkinter import *
