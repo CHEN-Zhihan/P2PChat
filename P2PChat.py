@@ -10,10 +10,16 @@
 from tkinter import *
 import sys
 import socket
+from threading import Thread
+from queue import Queue
 
 #
 # Global variables
 #
+START_STATE = 0
+NAMED_STATE = 1
+JOINED_STATE = 2
+CONNECTED_STATE = 3
 #
 # This is the hash function for generating a unique
 # Hash ID for each peer.
@@ -29,6 +35,59 @@ def sdbm_hash(instr):
     for c in instr:
         hash = int(ord(c)) + (hash << 6) + (hash << 16) - hash
     return hash & 0xffffffffffffffff
+
+
+class AliveKeeper(Thread):
+    def __init__(self, manager):
+        Thread.__init__(manager)
+        self._running = True
+
+
+class NetworkManager(Thread):
+    def __init__(self, P2PChat):
+        Thread.__init__(self)
+        self.chat = P2PChat
+        self.queue = Queue(maxsize=5)
+
+    def run(self):
+        pass
+
+    def doJoin(self):
+        pass
+
+    def connect(self):
+        pass
+
+    def shutdown(self):
+        pass
+
+    def put(self, message):
+        pass
+
+
+class P2PChat(object):
+    def __init__(self, argv, observer):
+        self.server = (argv[0], int(argv[1]))
+        self.port = int(argv[2])
+        self.state = START_STATE
+
+    def receive(self, message):
+        pass
+
+    def do_Join(self):
+        pass
+
+    def do_List(self):
+        pass
+
+    def do_Quit(self):
+        pass
+
+    def do_Send(self, message):
+        pass
+
+    def do_User(self, message):
+        pass
 
 
 class P2PChatUI(object):
