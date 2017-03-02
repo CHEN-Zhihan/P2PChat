@@ -371,17 +371,17 @@ class P2PChatUI(object):
 
     def update(self, message):
         if message[0] == ADD:
+            for i in message[1]:
+                self._cmd(i)
             if self._first:
-                self._cmd("[ROOM] List all members")
+                self._cmd("[ROOM] List all members:")
                 self._first = False
             else:
-                self._cmd("[ROOM] joined the room")
-            for i in message[1]:
-                self._cmd(i)
+                self._cmd("[ROOM] user(s) joined:")
         else:
-            self._cmd("[ROOM] left the room")
             for i in message[1]:
                 self._cmd(i)
+            self._cmd("[ROOM] user(s) left:")
 
 
 def main():
