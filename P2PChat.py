@@ -9,8 +9,9 @@
 from tkinter import *
 import sys
 import socket
-from threading import Thread, Condition
+from threading import Thread, Condition, Event
 from queue import Queue
+import collections
 
 #
 # Global variables
@@ -20,6 +21,8 @@ NAMED_STATE = 1
 JOINED_STATE = 2
 CONNECTED_STATE = 3
 DO_JOIN = 0
+KEEP_CONNECTION = 1
+NEW_CONNECTION = 2
 ADD = 1
 REMOVE = 2
 #
@@ -70,7 +73,6 @@ class Member(object):
         self._name = name
         self._ip = ip
         self._port = port
-        self._msgID = 0
         self._ID = sdbm_hash("{}{}{}".format(name, ip, port))
 
     def getID(self):
@@ -78,6 +80,9 @@ class Member(object):
 
     def getName(self):
         return self._name
+
+    def getHost(self):
+        return (self._ip, self._port)
 
 
 class AliveKeeper(Thread):
@@ -92,33 +97,102 @@ class AliveKeeper(Thread):
 
     def run(self):
         while self._running:
-            self._manager.put(DO_JOIN)
+            self._manager.put((DO_JOIN))
             self._condition.acquire()
             self._condition.wait(20)
             self._condition.release()
 
     def shutdown(self):
         self._running = False
+        self.notify()
+        self.join()
+
+    def notify(self):
         self._condition.acquire()
         self._condition.notify()
         self._condition.release()
+
+
+class ConnectionKeeper(Thread):
+    """
+    A separate thread for keeping connected
+    """
+    def __init__(self, manager):
+        Thread.__init__(self)
+        self._manager = manager
+        self._running = True
+        self._loseForward = Event()
+        self._condition = Condition()
+
+    def run(self):
+        while self._running:
+            self._manager.put((KEEP_CONNECTION))
+            if not self._loseForward.is_set():
+                self._loseForward.wait()
+            if self._running:
+                self._condition.acquire()
+                self._condition.wait(5)
+                self._condition.notify()
+
+    def shutdown(self):
+        self._running = False
+        self._loseForward.set()
+        self._loseForward.clear()
         self.join()
+
+    def loseForward(self):
+        self._loseForward.set()
+
+    def hasForward(self):
+        self._loseForward.clear()
 
 
 class PeerListener(Thread):
     """
     A thread listening connections from other peers
     """
-    def __init__(self, manager):
+    def __init__(self, manager, localhost, port):
         Thread.__init__(self)
         self._manager = manager
         self._running = True
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.bind((localhost, port))
+        self._socket.listen(5)
 
     def run(self):
-        pass
+        while self._running:
+            newSocket, address = self._socket.accept()
+            newSocket.settimeout(5)
+            try:
+                message = newSocket.recv(1024).decode("ascii")
+            except timeout:
+                print("Not receiving handshaking from {}, closed".format(
+                      newSocket.getpeername()))
+                newSocket.close()
+            else:
+                if self._running:
+                    if message[:2] == "P:" and message[-4:] == "\r\n":
+                        result = message[2:-4].split(':')
+                        if len(result) == 5:
+                            newSocket.settimeout(None)
+                            self._manager.put((NEW_CONNECTION,
+                                              message, newSocket))
+                        else:
+                            print("Received {} from {}, closed".format(
+                                message, newSocket.getpeername()
+                            ))
+                            newSocket.close()
+                    else:
+                        print("Received {} from {}, closed".format(
+                            message, newSocket.getpeername()
+                        ))
+                        newSocket.close()
 
     def shutdown(self):
-        pass
+        self._running = False
+        self._socket.shutdown(socket.SHUT_RDWR)
+        self._socket.close()
+        self.join()
 
 
 class PeerHandler(Thread):
@@ -151,9 +225,14 @@ class NetworkManager(Thread):
         self._serverSocket.connect(roomServer)
         self._localhost = self._serverSocket.getsockname()[0]
         self._port = port
+        self._finishJoin = Condition()
         self._aliveKeeper = AliveKeeper(self)
+        self._connectionKeeper = ConnectionKeeper(self)
+        self._peerListener = PeerListener(self)
         self._forward = None
         self._backwards = []
+        self._msgID = 0
+        self._ID = ""
         self._MSID = ""
 
     def _request(self, message):
@@ -201,14 +280,14 @@ class NetworkManager(Thread):
             item = self._queue.get()
             if item is None:
                 break
-            if item == DO_JOIN:
+            if item[0] == DO_JOIN:
                 self._doJoin()
-
-    def do_Join(self):
-        """
-        start the aliveKeeper, which will send a JOIN request to room server.
-        """
-        self._aliveKeeper.start()
+            elif item[0] == KEEP_CONNECTION:
+                self._connect()
+            else item[0] == NEW_CONNECTION:
+                self._establish(item[1], item[2])
+            else item[0] == RECEIVE_MESSAGE:
+                self._receive(item[1], item[2])
 
     def _doJoin(self):
         """
@@ -222,7 +301,44 @@ class NetworkManager(Thread):
             raise RemoteException(received[1:])
         self._parseJoin(received[2:])
 
-    def connect(self):
+    def _connect(self):
+        if self._forward is None:
+            length = len(self._members.keys())
+            if length != 1:
+                ids = sorted(self._members.keys())
+                i = (ids.index(self._ID) + 1) % length
+                while ids[i] != self._ID:
+                    if ids[i] in self._backwards and length != 2:
+                        i = (i + 1) % length
+                    else:
+                        try:
+                            forward = socket.socket(socket.AF_INET,
+                                                    socket.SOCK_STREAM)
+                            forward.connect(self._members[ids[i]].getHost())
+                        except Exception as e:
+                            del forward
+                        else:
+                            message = "P:{}:{}:{}:{}:{}::\r\n".format(
+                                self._room, self._name, self._localhost,
+                                self._port, self._msgID
+                            )
+                            forward.settimeout(5)
+                            forward.send(message.encode("ascii"))
+                            try:
+                                m = forward.recv(1024).decode("ascii")
+                            except timeout:
+                                forward.close()
+                            else:
+                                if m[:2] == "S:" and m[-4:] == "::\r\n":
+                                    msgID = int(m[2:-4])
+
+        else:
+            self._connectionKeeper.hasForward()
+
+    def _establish(self, result, s):
+        pass
+
+    def _receive(self, message, s):
         pass
 
     def shutdown(self):
@@ -257,6 +373,20 @@ class NetworkManager(Thread):
         """
         self._name = name
         self._room = room
+        self._ID = sdbm_hash("{}{}{}".format(self._name,
+                             self._localhost, self._port))
+
+    def do_Join(self):
+        """
+        start the aliveKeeper, which will send a JOIN request to room server.
+        """
+        self._aliveKeeper.start()
+        self._connectionKeeper.start()
+        self._peerListener.start()
+
+
+class ServerManager(Thread):
+    
 
 
 class P2PChat(object):
