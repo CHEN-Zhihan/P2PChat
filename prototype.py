@@ -1,12 +1,42 @@
 from tkinter import *
 import sys
 import socket
-from threading import Thread, Condition, Event
+from threading import Thread, Condition, Lock
 from queue import Queue
 
+START_STATE = 0
+NAMED_STATE = 1
+JOINED_STATE = 2
+CONNECTED_STATE = 3
 NEW_CONNECTION = 0
 RECEIVE_MESSAGE = 1
 RECONNECT = 2
+ADD = 1
+REMOVE = 2
+
+
+class UnnamedException(Exception):
+    pass
+
+
+class UnjoinedException(Exception):
+    pass
+
+
+class JoinedException(Exception):
+    pass
+
+
+class RemoteException(Exception):
+    """
+    Exception on the room server
+    """
+    def __init__(self, msg):
+        self._msg = msg
+
+    def __str__(self):
+        return self._msg
+
 
 def sdbm_hash(instr):
     hash = 0
@@ -66,6 +96,7 @@ class ConnectionKeeper(Thread):
     Keep connected
     """
     def __init__(self, manager):
+        Thread.__init__(self)
         self._manager = manager
         self._running = True
         self._condition = Condition()
@@ -102,13 +133,18 @@ class PeerListener(Thread):
 
     def run(self):
         while self._running:
-            new, address = self._soc.accept()
-            if self._running:
-                self._peerManager.submit((NEW_CONNECTION, new))
+            try:
+                new, address = self._soc.accept()
+            except OSError:
+                if not self._running:
+                    break
+            else:
+                if self._running:
+                    self._peerManager.submit((NEW_CONNECTION, new))
 
     def shutdown(self):
         self._running = False
-        self._soc.shutdown(socket.SHUT_RDWR)
+        self._soc.shutdown(socket.SHUT_RD)
         self._soc.close()
         self.join()
 
@@ -140,32 +176,20 @@ class PeerHandler(Thread):
         self.join()
 
 
-class BaseManager(Thread):
-    def __init__(self):
-        Thread.__init__(self)
-        self._room = None
-        self._name = None
-        self._ip = None
-        self._port = None
-
-    def setInfo(self, room, name, ip, port):
-        self._room = room
-        self._name = name
-        self._ip = ip
-        self._port = port
-
-
 class PeerManager(Thread):
     """
     Manage peers
     """
-    def __init__(self, m, serverManager):
-        self._chat = m
+    def __init__(self, chat, serverManager):
+        Thread.__init__(self)
+        self._chat = chat
         self._serverManager = serverManager
         self._connectionKeeper = None
+        self._peerListener = None
         self._peerTasks = Queue()
         self._forward = None
         self._backwards = []
+        self._msgID = 0
 
     def _connect(self):
         if self._forward is None:
@@ -188,7 +212,8 @@ class PeerManager(Thread):
                             else:
                                 result = self._handshake(forward)
                                 if result >= 0:
-                                    self._addForward(members[i], result, forward)
+                                    self._addForward(members[i],
+                                                     result, forward)
                                     break
                                 else:
                                     del forward
@@ -198,6 +223,7 @@ class PeerManager(Thread):
 
     def _handshake(self, to):
         result = False
+        message
         message = "P:{}:{}:{}:{}:{}".format(self._room, self._name,
                                             self._ip, self._port, self._msgID)
         to.settimeout(10)
@@ -209,7 +235,8 @@ class PeerManager(Thread):
             return -1
         else:
             if received[:2] != "S:" or received[:-4] != "::\r\n":
-                print("Incorrect handshake confirmation, delete", to.getpeername())
+                print("Incorrect handshake confirmation, delete",
+                      to.getpeername())
                 return -1
         to.settimeout(None)
         return int(received[2:-4])
@@ -227,8 +254,8 @@ class PeerManager(Thread):
             new.settimeout(None)
             if received[:2] == "P:" and received[-4:] == "::\r\n":
                 result = message[2:-4].split(':')
-                if len(result) == 5 and result[0] == self._room and
-                result[2] == new.getpeername()[0]:
+                if len(result) == 5 and result[0] == self._room and \
+                   result[2] == new.getpeername()[0]:
                     ID = sdbm_hash("{}{}{}".format(result[1],
                                                    result[2], result[3]))
                     member = self._serveManager.getMember(ID)
@@ -286,7 +313,9 @@ class PeerManager(Thread):
                 message = message[i + 1:]
                 if k >= 3:
                     result[k] = int(result[k])
-            pass
+            print(result)
+        except Exception as e:
+            print(e)
 
     def _broadcast(self, msg):
         pass
@@ -294,18 +323,32 @@ class PeerManager(Thread):
     def submit(self, task):
         self._peerTasks.put(task)
 
-    def doQuit(self):
+    def shutdown(self):
         self._running = False
         self._peerTasks.join()
+        if self._peerListener:
+            self._peerListener.shutdown()
+        if self._connectionKeeper:
+            self._connectionKeeper.shutdown()
         if self._forward:
             self._forward.shutdown()
         for handler in self._backwards:
             handler.shutdown()
+        self.submit(None)
         self.join()
 
     def run(self):
-        while self._running:
+        self._setInfo()
+        self._connectionKeeper = ConnectionKeeper(self)
+        self._connectionKeeper.start()
+        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        soc.bind((self._ip, self._port))
+        self._peerListener = PeerListener(self, soc)
+        self._peerListener.start()
+        while True:
             task = self._peerTasks.get()
+            if not task:
+                break
             if task[0] == NEW_CONNECTION:
                 self._accept(task[1])
             elif task[0] == RECEIVE_MESSAGE:
@@ -313,15 +356,21 @@ class PeerManager(Thread):
             elif task[0] == RECONNECT:
                 self._connect()
 
+    def _setInfo(self):
+        name, room, ip, port = self._serverManager.getInfo()
+        self._name = name
+        self._room = room
+        self._ip = ip
+        self._port = port
+
 
 class ServerManager(object):
     """
     Manage servers
     """
-    def __init__(self, m, server):
-        self._chat = m
-        self._serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._serverSocket.connect(server)
+    def __init__(self, chat, soc):
+        self._chat = chat
+        self._serverSocket = soc
         self._aliveKeeper = AliveKeeper(self)
         self._requestLock = Lock()
         self._memberLock = Lock()
@@ -352,8 +401,10 @@ class ServerManager(object):
                 temp[m.getID()] = m
                 i += 3
             with self._memberLock:
-                added = [temp[m].getName() for m in temp if m not in self._members]
-                removed = [self._members[m].getName() for m in self._members if m not in temp]
+                added = [temp[m].getName()
+                         for m in temp if m not in self._members]
+                removed = [self._members[m].getName()
+                           for m in self._members if m not in temp]
                 self._members = temp
             if added:
                 self._chat.update((ADD, added))
@@ -361,7 +412,7 @@ class ServerManager(object):
                 self._chat.update((REMOVE, removed))
 
     def doList(self):
-        result = self._request("L")
+        received = self._request("L")
         if received[0] == 'F':
             raise RemoteException(received[2:])
         result = []
@@ -384,12 +435,14 @@ class ServerManager(object):
                 exist = True
         if not exist:
             self.keepAlive()
-        with self._memberLock:
-            if ID in self._members:
-                exist = True
+            with self._memberLock:
+                if ID in self._members:
+                    exist = True
         return self._members[ID] if exist else None
 
     def doJoin(self, room):
+        self._room = room
+        self._setInfo()
         self._aliveKeeper.start()
 
     def getMembers(self):
@@ -398,7 +451,228 @@ class ServerManager(object):
     def getMemberLock(self):
         return self._memberLock
 
+    def shutdown(self):
+        self._serverSocket.close()
+        if self._aliveKeeper:
+            self._aliveKeeper.shutdown()
+
+    def _setInfo(self):
+        name, ip, port = self._chat.getInfo()
+        self._name = name
+        self._ip = ip
+        self._port = port
+
+    def getInfo(self):
+        return (self._name, self._room, self._ip, self._port)
+
 
 class P2PChat(object):
-    def __init__(self, server, port):
-        
+    def __init__(self, server, port, observer):
+        self._state = START_STATE
+        self._name = None
+        soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        soc.connect(server)
+        self._server = ServerManager(self, soc)
+        self._peer = PeerManager(self, self._server)
+        self._observer = observer
+        self._port = port
+        self._ip = soc.getsockname()[0]
+
+    def doJoin(self, room):
+        """
+        Check the state, if it is named and unjoined,
+        give NetworkManager corresponding information and
+        call do_Join(). Update state afterwards.
+        """
+        if self._state >= JOINED_STATE:
+            raise JoinedException()
+        if self._state == START_STATE:
+            raise UnnamedException()
+        self._server.doJoin(room)
+        self._peer.start()
+        self._state = JOINED_STATE
+
+    def doList(self):
+        return self._server.doList()
+
+    def doQuit(self):
+        self._server.shutdown()
+        self._peer.shutdown()
+
+    def doSend(self):
+        pass
+
+    def doUser(self, username):
+        if self._state > NAMED_STATE:
+            raise JoinedException()
+        self._name = username
+        self._state = NAMED_STATE
+
+    def update(self, l):
+        """
+        Inform GUI there's an update.
+        """
+        self._observer.update(l)
+
+    def getInfo(self):
+        return (self._name, self._ip, self._port)
+
+
+class P2PChatUI(object):
+    def __init__(self, argv):
+        #
+        # Set up of Basic UI
+        #
+        self._chat = P2PChat((argv[1], int(argv[2])), int(argv[3]), self)
+        self._first = True
+        win = Tk()
+        win.title("MyP2PChat")
+
+        # Top Frame for Message display
+        topframe = Frame(win, relief=RAISED, borderwidth=1)
+        topframe.pack(fill=BOTH, expand=True)
+        topscroll = Scrollbar(topframe)
+        self.MsgWin = Text(topframe, height='15', padx=5, pady=5, fg="red",
+                           exportselection=0, insertofftime=0)
+        self.MsgWin.pack(side=LEFT, fill=BOTH, expand=True)
+        topscroll.pack(side=RIGHT, fill=Y, expand=True)
+        self.MsgWin.config(yscrollcommand=topscroll.set)
+        topscroll.config(command=self.MsgWin.yview)
+
+        # Top Middle Frame for buttons
+        topmidframe = Frame(win, relief=RAISED, borderwidth=1)
+        topmidframe.pack(fill=X, expand=True)
+        Butt01 = Button(topmidframe, width='8',
+                        relief=RAISED, text="User", command=self.do_User)
+        Butt01.pack(side=LEFT, padx=8, pady=8)
+        Butt02 = Button(topmidframe, width='8',
+                        relief=RAISED, text="List", command=self.do_List)
+        Butt02.pack(side=LEFT, padx=8, pady=8)
+        Butt03 = Button(topmidframe, width='8',
+                        relief=RAISED, text="Join", command=self.do_Join)
+        Butt03.pack(side=LEFT, padx=8, pady=8)
+        Butt04 = Button(topmidframe, width='8',
+                        relief=RAISED, text="Send", command=self.do_Send)
+        Butt04.pack(side=LEFT, padx=8, pady=8)
+        Butt05 = Button(topmidframe, width='8',
+                        relief=RAISED, text="Quit", command=self.do_Quit)
+        Butt05.pack(side=LEFT, padx=8, pady=8)
+
+        # Lower Middle Frame for User input
+        lowmidframe = Frame(win, relief=RAISED, borderwidth=1)
+        lowmidframe.pack(fill=X, expand=True)
+        self.userentry = Entry(lowmidframe, fg="blue")
+        self.userentry.pack(fill=X, padx=4, pady=4, expand=True)
+
+        # Bottom Frame for displaying action info
+        bottframe = Frame(win, relief=RAISED, borderwidth=1)
+        bottframe.pack(fill=BOTH, expand=True)
+        bottscroll = Scrollbar(bottframe)
+        self.CmdWin = Text(bottframe, height='15', padx=5, pady=5,
+                           exportselection=0, insertofftime=0)
+        self.CmdWin.pack(side=LEFT, fill=BOTH, expand=True)
+        bottscroll.pack(side=RIGHT, fill=Y, expand=True)
+        self.CmdWin.config(yscrollcommand=bottscroll.set)
+        bottscroll.config(command=self.CmdWin.yview)
+        win.mainloop()
+    #
+    # Functions to handle user input
+    #
+
+    def do_Quit(self):
+        self._chat.doQuit()
+        sys.exit(0)
+
+    def do_Send(self):
+        self.CmdWin.insert(1.0, "\nPress Send")
+
+    def do_Join(self):
+        """
+        Validate the input, and call P2PChat's do_Join.
+        Handle exception and print errors.
+        """
+        room = self.userentry.get()
+        if self._valid(room):
+            try:
+                self._chat.doJoin(room)
+            except JoinedException:
+                self._cmd("[ERROR] Cannot join another room")
+            except UnnamedException:
+                self._cmd("[ERROR] Cannot join without name")
+        else:
+            self._cmd("[ERROR] Invalid roomname")
+        self.userentry.delete(0, END)
+
+    def do_List(self):
+        """
+        Call P2PChat's do_List.
+        Handle exception and print results.
+        """
+        try:
+            result = self._chat.doList()
+        except RemoteException as e:
+            self._cmd("[ERROR] " + e)
+        else:
+            if not result:
+                self._cmd("[LIST] No chatroom available")
+            else:
+                for i in result:
+                    self._cmd(i)
+                self._cmd("[LIST] list all chatroom(s)")
+
+    def do_User(self):
+        """
+        Validate the input, and call P2PChat's do_User.
+        Handle exception and print errors.
+        """
+        username = self.userentry.get()
+        if self._valid(username):
+            try:
+                self._chat.doUser(username)
+            except JoinedException:
+                self._cmd("[ERROR] Cannot Rename after Join")
+            else:
+                self._cmd("[USER] username: " + username)
+        else:
+            self._cmd("[ERROR] Invalid username")
+        self.userentry.delete(0, END)
+
+    def _cmd(self, message):
+        """
+        Print to command window.
+        """
+        self.CmdWin.insert(1.0, "\n" + message)
+
+    def _valid(self, name):
+        """
+        Validate information
+        """
+        return len(name) != 0 and all(map((lambda x: x != ':'), name))
+
+    def update(self, message):
+        """
+        Print updated information.
+        """
+        if message[0] == ADD:
+            for i in message[1]:
+                self._cmd(i)
+            if self._first:
+                self._cmd("[ROOM] List all members:")
+                self._first = False
+            else:
+                self._cmd("[ROOM] user(s) joined:")
+        else:
+            for i in message[1]:
+                self._cmd(i)
+            self._cmd("[ROOM] user(s) left:")
+
+
+def main():
+    if len(sys.argv) != 4:
+        print("P2PChat.py <server address> <server port no.> <my port no.>")
+        sys.exit(2)
+    P2PChatUI(sys.argv)
+
+
+if __name__ == "__main__":
+    main()
