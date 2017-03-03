@@ -11,6 +11,7 @@ CONNECTED_STATE = 3
 NEW_CONNECTION = 0
 RECEIVE_MESSAGE = 1
 RECONNECT = 2
+DISCONNECT = 3
 ADD = 1
 REMOVE = 2
 
@@ -109,7 +110,6 @@ class ConnectionKeeper(Thread):
         self._sleep = Condition()
 
     def run(self):
-        print("[Connection Keeper] Starting...")
         self._manager.submit((RECONNECT, ))
         while self._running:
             self._condition.acquire()
@@ -156,7 +156,6 @@ class PeerListener(Thread):
                     break
             else:
                 if self._running:
-                    print("[Peer Listener]Put ", (NEW_CONNECTION, new))
                     self._peerManager.submit((NEW_CONNECTION, new))
 
     def shutdown(self):
@@ -180,19 +179,32 @@ class PeerHandler(Thread):
     def run(self):
         while self._running:
             msg = self._soc.recv(1024).decode("ascii")
-            print("[Peer Received] {} *{}* ".format(self._soc.getpeername(),
-                  msg))
             if self._running:
-                self._peerManager.submit((RECEIVE_MESSAGE, msg, self))
+                if len(msg) != 0:
+                    print("[Peer Received] {} *{}* ".format(
+                        self._soc.getpeername(), msg
+                    ))
+                    self._peerManager.submit((RECEIVE_MESSAGE, msg, self))
+                else:
+                    print("[Peer Received] receive disconnect request from",
+                          self._member.getName())
+                    self._peerManager.submit((DISCONNECT, self))
+                    break
 
     def write(self, msg):
         self._soc.send(msg.encode("ascii"))
 
     def shutdown(self):
         self._running = False
-        self._soc.shutdown(socket.SHUT_RDWR)
+        try:
+            self._soc.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         self._soc.close()
         self.join()
+
+    def getID(self):
+        return self._member.getID()
 
 
 class PeerManager(Thread):
@@ -207,7 +219,7 @@ class PeerManager(Thread):
         self._peerListener = None
         self._peerTasks = Queue()
         self._forward = None
-        self._backwards = []
+        self._backwards = {}
         self._msgID = 0
         self._ID = None
         self._name = None
@@ -327,24 +339,16 @@ class PeerManager(Thread):
         soc.send("S:{}::\r\n".format(self._msgID).encode("ascii"))
         print("[Peer Manager] send hand shake confirm to", member)
         temp = PeerHandler(self, soc, m)
-        self._backwards.append(temp)
+        self._backwards[m.getID()] = temp
         temp.start()
         print("[Peer Manager] Add backward link from ", member.getName())
 
     def _receive(self, message, handler):
-        if len(message) == 0:
+        if message[:2] != "T:" or message[-4:] != "::\r\n":
+            print("[ERROR] receive illegal message: {}, shut down",
+                  message)
             handler.shutdown()
-            if self._forward == handler:
-                self._forward = None
-                self._connect()
-            else:
-                self._backwards.remove(handler)
-        else:
-            if message[:2] != "T:" or message[-4:] != "::\r\n":
-                print("[ERROR] receive illegal message: {}, shut down",
-                      message)
-                handler.shutdown()
-                self._process(message[2:-4])
+            self._process(message[2:-4])
 
     def _process(self, message):
         roomLength = len(self._room)
@@ -380,10 +384,21 @@ class PeerManager(Thread):
             self._connectionKeeper.shutdown()
         if self._forward:
             self._forward.shutdown()
-        for handler in self._backwards:
+        for handler in self._backwards.values():
             handler.shutdown()
         self.submit(None)
         self.join()
+
+    def _disconnect(self, handler):
+        ID = handler.getID()
+        handler.shutdown()
+        if self._forward == handler:
+            self._forward = None
+            print("[Peer Manager] Forward Link Disconnected")
+            self._connect()
+        else:
+            self._backwards.pop(ID)
+            print("[Peer Manager] Backward Link Disconnected")
 
     def run(self):
         self._setInfo()
@@ -406,6 +421,8 @@ class PeerManager(Thread):
                 self._receive(task[1], task[2])
             elif task[0] == RECONNECT:
                 self._connect()
+            elif task[0] == DISCONNECT:
+                self._disconnect(task[1])
             self._peerTasks.task_done()
 
     def _setInfo(self):
