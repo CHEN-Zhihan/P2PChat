@@ -214,8 +214,7 @@ class PeerHandler(Thread):
                     break
 
     def write(self, msg):
-        msg += "::\r\n"
-        self._soc.send(msg.encode("ascii"))
+        self._soc.send(msg)
 
     def shutdown(self):
         self._running = False
@@ -280,7 +279,7 @@ class NetworkManager(Thread):
                             forward.connect(self._members[IDs[i]].getHost())
                         except Exception as e:
                             print("[Peer Manager] Error connecting to ",
-                                  members[IDs[i]], e)
+                                  self._members[IDs[i]], e)
                             del forward
                         else:
                             print("preparing for handshake")
@@ -288,6 +287,7 @@ class NetworkManager(Thread):
                             if result >= 0:
                                 self._addForward(self._members[IDs[i]],
                                                  result, forward)
+                                break
                             else:
                                 del forward
                     else:
@@ -387,7 +387,8 @@ class NetworkManager(Thread):
                 if not member.hasSent(result[2]):
                     member.setMsgID(result[2])
                     self._observer.update((RECEIVE, result[4], result[1]))
-                    self._broadcast([ID, member.getID()], message)
+                    self._broadcast([ID, member.getID()],
+                                    message.encode("ascii"))
                 else:
                     print("[ERROR] receive duplicated message, drop")
             else:
@@ -401,24 +402,17 @@ class NetworkManager(Thread):
             print("[ERROR] Wrong room number received,drop: {}".
                   format(message))
             return None
-#        try:
-        print(message)
         message = message[roomLength + 1:]
         result = []
         i = 0
         for k in range(4):
-            print(message)
             i = message.index(":")
             result.append(message[:i])
             message = message[i + 1:]
             if k == 0 or k >= 2:
                 result[k] = int(result[k])
         result.append(message)
-        print(result)
         return result
-        # except Exception as e:
-            # print(e)
-            # return None
 
     def _broadcast(self, notSend, message):
         if self._forward and self._forward.getID() not in notSend:
@@ -470,10 +464,10 @@ class NetworkManager(Thread):
 
     def _send(self, rawMessage):
         self._me.sendOne()
-        message = "T:{}:{}:{}:{}:{}:{}".format(
+        message = "T:{}:{}:{}:{}:{}:{}::\r\n".format(
             self._room, self._me.getID(), self._me.getName(),
             self._me.getMsgID(), len(rawMessage), rawMessage
-        )
+        ).encode("ascii")
         self._observer.update((RECEIVE, rawMessage, self._me.getName()))
         self._broadcast([], message)
 
