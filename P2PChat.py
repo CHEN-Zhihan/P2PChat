@@ -62,9 +62,6 @@ class Member(object):
     def getID(self):
         return self._ID
 
-    def getName(self):
-        return self._name
-
     def getHost(self):
         return (self._ip, self._port)
 
@@ -73,6 +70,9 @@ class Member(object):
 
     def setMsgID(self, msgID):
         self._msgID = msgID
+
+    def getMsgID(self):
+        return self._msgID
 
 
 class AliveKeeper(Thread):
@@ -234,6 +234,7 @@ class NetworkManager(Thread):
         self._MSID = None
         self._me = None
         self._running = True
+        self._joinMessage = None
 
     def _request(self, message):
         send = message + "::\r\n"
@@ -247,45 +248,76 @@ class NetworkManager(Thread):
                 print("[Server Received]: " + received[:-4])
                 return received[:-4]
 
-    def _parseJoin(self, received):
-        result = received.split(':')
-        MSID = result[0]
-        if MSID != self._MSID:
-            temp = {}
-            i = 1
-            while i != len(result):
-                ID = sdbm_hash("".join(result[i, i + 3]))
-                if ID in self._members:
-                    m = self._members[ID]
-                else:
-                    m = Member(result[i], result[i + 1], int(result[i + 2]))
-                temp[ID] = m
-                i += 3
-            added = [temp[m].getName()
-                     for m in temp if m not in self._members]
-            removed = [self._members[m].getName()
-                       for m in self._members if m not in temp]
-            self._members = temp
-            if added:
-                self._observer.update((ADD, added))
-            if removed:
-                self._observer.update((REMOVE, removed))
-            self._MSID = MSID
-
     def _connect(self):
-        pass
+        if self._forward is None:
+            self._keepAlive()
+            length = len(self._members)
+            if length != 1:
+                IDs = sorted(self._members.keys())
+                myID = self._me.getID()
+                i = (IDs.index(myID) + 1) % length
+                while IDs[i] != myID:
+                    if IDs[i] not in self._backward:
+                        try:
+                            forward = socket.socket()
+                            forward.connect(self._members[IDs[i]].getHost())
+                        except Exception as e:
+                            print("[Peer Manager] Error connecting to ",
+                                  members[IDs[i]], e)
+                            del. forward
+                        else:
+                            result = self._handshake(forward)
+                            if result >= 0:
+                                self._addForward(self._members[IDs[i]],
+                                                 result, forward)
+                            else:
+                                del forward
+                    else:
+                        print("[Peer Manager] {} is in backwards, aborted".
+                              format(members[IDs[i]]))
+                    i = (i + 1) % length
+            else:
+                print("[Peer Manager] No others in the room")
+        if self._forward is None:
+            print("[Peer Manager] Connection Failed rescheduled later")
+            self._connectionKeeper.schedule()
 
-    def _handshake(self):
-        pass
+    def _handshake(self, soc):
+        result = False
+        message = "P" + self._joinMessage[1:] + ":{}\r\n".format(
+            self._me.getMsgID()
+        )
+        soc.settimeout(10)
+        soc.send(message.encode("ascii"))
+        try:
+            received = soc.recv(1024).decode("ascii")
+        except socket.timeout:
+            print("[ERROR] Handshake timeout, delete ", soc.getpeername())
+            return -1
+        else:
+            if received[:2] != "S:" or received[-4:] != "::\r\n":
+                print("[ERROR] Incorrect handshake confirmation", received)
+                return -1
+        soc.settimeout(None)
+        return int(received[2:-4])
 
     def _accept(self, soc):
         pass
 
     def _addForward(self, member, msgID, soc):
-        pass
+        m = member
+        m.setMsgID(msgID)
+        self._forward = PeerHandler(self, soc, m)
+        self._forward.start()
+        print("[Peer Manager] Add forward Link to ", m.getName())
 
     def _addBackward(self, member, msgID, soc):
-        pass
+        member.setMsgID(msgID)
+        soc.send("S:{}::\r\n".format(self._me.getMsgID()).encode("ascii"))
+        temp = PeerHandler(self, soc, m)
+        self._backwards[member.getID()] = temp
+        temp.start()
+        print("[Peer Manager] Add Backward Link to ", m.getName())
 
     def _receive(self, message, handler):
         pass
@@ -302,7 +334,40 @@ class NetworkManager(Thread):
     def _send(self, message):
         pass
 
+    def _keepAlive(self):
+        received = self._request(self._joinMessage)
+        if received[0] == "F":
+            self._observer.update((REMOTE_ERROR, received[2:]))
+        else:
+            result = received.split(':')
+            MSID = result[0]
+            if MSID != self._MSID:
+                temp = {}
+                i = 1
+                while i != len(result):
+                    ID = sdbm_hash("".join(result[i, i + 3]))
+                    if ID in self._members:
+                        m = self._members[ID]
+                    else:
+                        m = Member(result[i], result[i + 1], int(result[i + 2]))
+                    temp[ID] = m
+                    i += 3
+                added = [temp[m].getName()
+                         for m in temp if m not in self._members]
+                removed = [self._members[m].getName()
+                           for m in self._members if m not in temp]
+                self._members = temp
+                if added:
+                    self._observer.update((ADD, added))
+                if removed:
+                    self._observer.update((REMOVE, removed))
+                self._MSID = MSID
+
     def run(self):
+        self._aliveKeeper.start()
+        self._connectionKeeper.start()
+        self._peerListener.start()
+        self._connect()
         while self._running:
             item = self._queue.get()
             if not self._running:
@@ -321,7 +386,9 @@ class NetworkManager(Thread):
                     self._disconnect(item[1])
                 elif item[0] == KEEP_ALIVE:
                     self._keepAlive()
-        # TODO
+        self._aliveKeeper.shutdown()
+        self._connectionKeeper.shutdown()
+        self._peerListener.shutdown()
 
     def doList(self):
         received = self._request("L")
@@ -333,7 +400,15 @@ class NetworkManager(Thread):
         return result
 
     def doJoin(self, name, room, port):
-        pass
+        ip = self._serverSocket.getsockname()[0]
+        self._me = Member(name, ip, port)
+        self._joinMessage = "J:{}:{}:{}:{}".format(
+            room, name, ip, port
+        )
+        self._aliveKeeper = AliveKeeper(self)
+        self._connectionKeeper = ConnectionKeeper(self)
+        self._peerListener = PeerListener(self, (ip, port))
+        self.start()
 
     def doSend(self, message):
         pass
@@ -347,7 +422,7 @@ class P2PChat(object):
         self._state = START_STATE
         self._name = None
         self._port = port
-        self._manager = NetworkManager(observer, soc, (server, int(port)))
+        self._manager = NetworkManager(observer, server)
 
     def doJoin(self, room):
         """
