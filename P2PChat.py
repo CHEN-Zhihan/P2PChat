@@ -3,6 +3,7 @@ import sys
 import socket
 from threading import Thread, Condition, Lock
 from queue import Queue
+import traceback
 
 START_STATE = 0
 NAMED_STATE = 1
@@ -15,6 +16,7 @@ ACCEPT = "ACCEPT"
 RECEIVE = "RECEIVE"
 DISCONNECT = "DISCONNECT"
 SEND = "SEND"
+DO_LIST = "DO_LIST"
 
 ADD = 1
 REMOVE = 2
@@ -96,12 +98,16 @@ class AliveKeeper(Thread):
         self._manager = manager
         self._running = True
         self._condition = Condition()
+        self._postpone = False
 
     def run(self):
         while self._running:
             self._condition.acquire()
             self._condition.wait(20)
             self._condition.release()
+            if self._postpone and self._running:
+                self._postpone = False
+                continue
             if self._running:
                 self._manager.submit((KEEP_ALIVE, ))
 
@@ -111,6 +117,12 @@ class AliveKeeper(Thread):
         self._condition.notify()
         self._condition.release()
         self.join()
+
+    def postpone(self):
+        self._postpone = True
+        self._condition.acquire()
+        self._condition.notify()
+        self._condition.release()
 
 
 class ConnectionKeeper(Thread):
@@ -131,7 +143,7 @@ class ConnectionKeeper(Thread):
             self._condition.release()
             if self._running:
                 self._sleep.acquire()
-                self._sleep.wait(timeout=20)
+                self._sleep.wait(timeout=5)
                 self._sleep.release()
                 if self._running:
                     self._manager.submit((CONNECT, ))
@@ -198,23 +210,29 @@ class PeerHandler(Thread):
 
     def run(self):
         while self._running:
-            msg = self._soc.recv(1024).decode("ascii")
-            if self._running:
-                if len(msg) != 0:
-                    print("[Peer Received] {} *{}* ".format(
-                        self._soc.getpeername(), msg
-                    ))
-                    self._manager.submit((RECEIVE, msg, self._ID))
-                else:
-                    print("[Peer Received] receive disconnect request\
-                           from {}".format(
-                        self._soc.getpeername()
-                    ))
-                    self._manager.submit((DISCONNECT, self))
-                    break
+            try:
+                msg = self._soc.recv(1024).decode("ascii")
+            except OSError as e:
+                print("[ERROR] error in peer receiving", e)
+                self._manager.submit((DISCONNECT, self))
+            else:
+                if self._running:
+                    if len(msg) != 0:
+                        print("[Peer Received] {} *{}* ".format(
+                            self._soc.getpeername(), msg
+                        ))
+                        self._manager.submit((RECEIVE, msg, self._ID))
+                    else:
+                        print("[Peer Received] receive disconnect request")
+                        self._manager.submit((DISCONNECT, self))
+                        break
 
     def write(self, msg):
-        self._soc.send(msg)
+        try:
+            self._soc.send(msg)
+        except OSError as e:
+            print("[ERROR] error in peer writing", e)
+            self._manager.submit((DISCONNECT, self))
 
     def shutdown(self):
         self._running = False
@@ -238,6 +256,7 @@ class NetworkManager(Thread):
         except OSError as e:
             print(e)
             sys.exit(-1)
+        self._quitable = Condition()
         self._observer = observer
         self._queue = Queue()
         self._backward = {}
@@ -250,15 +269,24 @@ class NetworkManager(Thread):
         self._joinMessage = None
         self._room = None
         self._me = None
-        self._running = True
+        self._running = False
 
     def _request(self, message):
         send = message + "::\r\n"
-        self._serverSocket.send(send.encode("ascii"))
+        try:
+            self._serverSocket.send(send.encode("ascii"))
+        except OSError as e:
+            print("[ERROR] cannot send to server", e)
         print("[Server Sent]: " + message)
         received = ""
         while True:
-            m = self._serverSocket.recv(1024)
+            try:
+                m = self._serverSocket.recv(1024)
+            except OSError as e:
+                if not self._running:
+                    pass
+                else:
+                    print("[ERROR] receiving from server", e)
             received += m.decode("ascii")
             if len(received) > 4 and received[-4:] == "::\r\n":
                 print("[Server Received]: " + received[:-4])
@@ -266,6 +294,7 @@ class NetworkManager(Thread):
 
     def _connect(self):
         if self._forward is None:
+            self._aliveKeeper.postpone()
             self._keepAlive()
             length = len(self._members)
             if length != 1:
@@ -282,7 +311,6 @@ class NetworkManager(Thread):
                                   self._members[IDs[i]], e)
                             del forward
                         else:
-                            print("preparing for handshake")
                             result = self._handshake(forward)
                             if result >= 0:
                                 self._addForward(self._members[IDs[i]],
@@ -306,12 +334,18 @@ class NetworkManager(Thread):
             self._me.getMsgID()
         )
         soc.settimeout(10)
-        soc.send(message.encode("ascii"))
-        print("send to {} {}".format(soc.getpeername(), message))
+        try:
+            soc.send(message.encode("ascii"))
+        except OSError as e:
+            print("[ERROR] cannot send handshake", e)
+            return -1
         try:
             received = soc.recv(1024).decode("ascii")
         except socket.timeout:
             print("[ERROR] Handshake timeout, delete ", soc.getpeername())
+            return -1
+        except OSError as e:
+            print("[ERROR]Cannot receive handshake", e)
             return -1
         else:
             if received[:2] != "S:" or received[-4:] != "::\r\n":
@@ -323,6 +357,7 @@ class NetworkManager(Thread):
     def _getMember(self, ID):
         if ID in self._members:
             return self._members[ID]
+        self._aliveKeeper.postpone()
         self._keepAlive()
         return self._members[ID] if ID in self._members else None
 
@@ -369,7 +404,6 @@ class NetworkManager(Thread):
     def _addBackward(self, member, msgID, soc):
         member.setMsgID(msgID)
         soc.send("S:{}::\r\n".format(self._me.getMsgID()).encode("ascii"))
-        print("Send to {} handshake confirmation".format(soc.getpeername()))
         temp = PeerHandler(self, member.getID(), soc)
         self._backward[member.getID()] = temp
         temp.start()
@@ -429,8 +463,7 @@ class NetworkManager(Thread):
             self._connect()
         else:
             temp = self._backward.pop(handler.getID())
-            print("[BACKWARD] {} Disconnected".
-                  format(temp))
+            print("[BACKWARD] A peer Disconnected")
 
     def _keepAlive(self):
         received = self._request(self._joinMessage)
@@ -471,38 +504,42 @@ class NetworkManager(Thread):
         self._observer.update((RECEIVE, rawMessage, self._me.getName()))
         self._broadcast([], message)
 
-    def run(self):
-
-        self._connect()
-        while self._running:
-            item = self._queue.get()
-            if not self._running:
-                self._queue.task_done()
-                while not self._queue.empty():
-                    _ = self._queue.get()
-                    self._queue.task_done()
-            else:
-                if item[0] == ACCEPT:
-                    self._accept(item[1])
-                elif item[0] == RECEIVE:
-                    self._receive(item[1], item[2])
-                elif item[0] == CONNECT:
-                    self._connect()
-                elif item[0] == DISCONNECT:
-                    self._disconnect(item[1])
-                elif item[0] == KEEP_ALIVE:
-                    self._keepAlive()
-                elif item[0] == SEND:
-                    self._send(item[1])
-
-    def doList(self):
+    def _doList(self):
         received = self._request("L")
         if received[0] == 'F':
-            raise RemoteException(received[2:])
+            print(received)
+            return
         result = []
         if len(received) != 1:
             result = received[2:].split(':')
-        return result
+        self._observer.update((DO_LIST, result))
+
+    def run(self):
+        self._connect()
+        while self._running:
+            item = self._queue.get()
+            if item is None:
+                self._shutdown()
+            elif item[0] == ACCEPT:
+                self._accept(item[1])
+            elif item[0] == RECEIVE:
+                self._receive(item[1], item[2])
+            elif item[0] == CONNECT:
+                self._connect()
+            elif item[0] == DISCONNECT:
+                self._disconnect(item[1])
+            elif item[0] == KEEP_ALIVE:
+                self._keepAlive()
+            elif item[0] == SEND:
+                self._send(item[1])
+            elif item[0] == DO_LIST:
+                self._doList()
+
+    def doList(self):
+        if self.is_alive():
+            self._queue.put((DO_LIST, ))
+        else:
+            self._doList()
 
     def doJoin(self, name, room, port):
         ip = self._serverSocket.getsockname()[0]
@@ -517,32 +554,38 @@ class NetworkManager(Thread):
         self._aliveKeeper.start()
         self._connectionKeeper.start()
         self._peerListener.start()
+        self._running = True
         self.start()
 
     def doSend(self, message):
         self.submit((SEND, message))
 
     def shutdown(self):
+        if self.is_alive():
+            self.submit(None)
+        else:
+            try:
+                self._serverSocket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            finally:
+                self._serverSocket.close()
+
+    def _shutdown(self):
         self._running = False
-        self.submit(None)
         if self._aliveKeeper:
+            print("Waiting for alive keeper")
             self._aliveKeeper.shutdown()
         if self._connectionKeeper:
+            print("Waiting for connection keeper")
             self._connectionKeeper.shutdown()
         if self._peerListener:
+            print("Waiting for peer listener")
             self._peerListener.shutdown()
         if self._forward:
             self._forward.shutdown()
         for h in self._backward.values():
             h.shutdown()
-        try:
-            self._serverSocket.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        finally:
-            self._serverSocket.close()
-        if self.is_alive():
-            self.join()
 
     def submit(self, item):
         self._queue.put(item)
@@ -569,10 +612,12 @@ class P2PChat(object):
         self._state = JOINED_STATE
 
     def doList(self):
-        return self._manager.doList()
+        self._manager.doList()
 
     def doQuit(self):
         self._manager.shutdown()
+        if self._manager.is_alive():
+            self._manager.join()
 
     def doSend(self, message):
         if self._state < JOINED_STATE:
@@ -685,17 +730,7 @@ class P2PChatUI(object):
         Call P2PChat's do_List.
         Handle exception and print results.
         """
-        try:
-            result = self._chat.doList()
-        except RemoteException as e:
-            self._cmd("[ERROR] " + e)
-        else:
-            if not result:
-                self._cmd("[LIST] No chatroom available")
-            else:
-                for i in result:
-                    self._cmd(i)
-                self._cmd("[LIST] list all chatroom(s)")
+        self._chat.doList()
 
     def do_User(self):
         """
@@ -754,6 +789,13 @@ class P2PChatUI(object):
             self._cmd("[FORWARD] connected to {}".format(message[1]))
         elif message[0] == BACKWARD:
             self._cmd("[BACKWARD] {} connected to you".format(message[1]))
+        elif message[0] == DO_LIST:
+            if not message[1]:
+                self._cmd("[LIST] No chatroom available")
+            else:
+                for i in message[1]:
+                    self._cmd(i)
+                self._cmd("[LIST] list all chatroom(s)")
 
 
 def main():
