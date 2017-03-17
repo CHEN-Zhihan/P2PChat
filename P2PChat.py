@@ -1,15 +1,27 @@
+"""
+Student Name: CHEN, Zhihan
+UID: 3035142261
+Development Platform: Ubuntu 16.04 LTS x64
+Python Version: Python 3.5.2
+Version: stage 2
+"""
+
 from tkinter import *
 import sys
 import socket
-from threading import Thread, Condition, Lock
+from threading import Thread, Condition, Lock, Event
 from queue import Queue
-import traceback
 
+"""
+Global variable indicating states
+"""
 START_STATE = 0
 NAMED_STATE = 1
 JOINED_STATE = 2
-CONNECTED_STATE = 3
 
+"""
+Global variables indicating actions to be taken
+"""
 KEEP_ALIVE = "KEEP_ALIVE"
 CONNECT = "CONNECT"
 ACCEPT = "ACCEPT"
@@ -17,13 +29,20 @@ RECEIVE = "RECEIVE"
 DISCONNECT = "DISCONNECT"
 SEND = "SEND"
 DO_LIST = "DO_LIST"
+"""
+Variables indicate the observer what to do
+"""
+OBSERVE_ADD = 1
+OBSERVE_REMOVE = 2
+OBSERVE_FORWARD = 3
+OBSERVE_BACKWARD = 4
+OBSERVE_ERROR = 5
+OBSERVE_MESSAGE = 6
+OBSERVE_LIST = 7
 
-ADD = 1
-REMOVE = 2
-FORWARD = 3
-BACKWARD = 4
-REMOTE_ERROR = 5
-MESSAGE = 6
+"""
+These are classes for handling illegal transitions
+"""
 
 
 class UnnamedException(Exception):
@@ -39,9 +58,11 @@ class JoinedException(Exception):
 
 
 class RemoteException(Exception):
+
     """
     Exception on the room server
     """
+
     def __init__(self, msg):
         self._msg = msg
 
@@ -57,6 +78,10 @@ def sdbm_hash(instr):
 
 
 class Member(object):
+    """
+    This is an abstraction of members
+    """
+
     def __init__(self, name, ip, port, msgID=0):
         self._name = name
         self._ip = ip
@@ -69,9 +94,6 @@ class Member(object):
 
     def getHost(self):
         return (self._ip, self._port)
-
-    def __str__(self):
-        return "{}@{}".format(self._name, self.getHost())
 
     def setMsgID(self, msgID):
         self._msgID = msgID
@@ -88,11 +110,15 @@ class Member(object):
     def getName(self):
         return self._name
 
+    def __str__(self):
+        return "{}@{}".format(self._name, self.getHost())
+
 
 class AliveKeeper(Thread):
     """
-    A seprate thread for KEEPALIVE
+    A seprate thread for KEEPALIVE strategy.
     """
+
     def __init__(self, manager):
         Thread.__init__(self)
         self._manager = manager
@@ -105,10 +131,10 @@ class AliveKeeper(Thread):
             self._condition.acquire()
             self._condition.wait(20)
             self._condition.release()
-            if self._postpone and self._running:
-                self._postpone = False
-                continue
             if self._running:
+                if self._postpone:
+                    self._postpone = False
+                    continue
                 self._manager.submit((KEEP_ALIVE, ))
 
     def shutdown(self):
@@ -116,9 +142,14 @@ class AliveKeeper(Thread):
         self._condition.acquire()
         self._condition.notify()
         self._condition.release()
-        self.join()
+        if self.is_alive():
+            self.join()
 
     def postpone(self):
+        """
+        To be called when another request (e.g., connect) invokes keepAlive(),
+        So that this thread can postpone next keepAlive request
+        """
         self._postpone = True
         self._condition.acquire()
         self._condition.notify()
@@ -127,8 +158,10 @@ class AliveKeeper(Thread):
 
 class ConnectionKeeper(Thread):
     """
-    Keep connected
+    A separate thread monitoring connection status.
+    It will normally be blocked.
     """
+
     def __init__(self, manager):
         Thread.__init__(self)
         self._manager = manager
@@ -149,6 +182,10 @@ class ConnectionKeeper(Thread):
                     self._manager.submit((CONNECT, ))
 
     def schedule(self):
+        """
+        When the connect() method cannot establish connection immediately,
+        Call schedule to execute connect() 5 seconds later.
+        """
         self._condition.acquire()
         self._condition.notify()
         self._condition.release()
@@ -159,22 +196,19 @@ class ConnectionKeeper(Thread):
         self._sleep.acquire()
         self._sleep.notify()
         self._sleep.release()
-        self.join()
+        if self.is_alive():
+            self.join()
 
 
 class PeerListener(Thread):
     """
     Listen connection requests from peers
     """
-    def __init__(self, manager, localhost):
+
+    def __init__(self, manager, soc):
         Thread.__init__(self)
         self._manager = manager
-        self._soc = socket.socket()
-        try:
-            self._soc.bind(localhost)
-        except OSError as e:
-            print(e)
-            sys.exit(-1)
+        self._soc = soc
         self._soc.listen(5)
         self._running = True
 
@@ -194,13 +228,15 @@ class PeerListener(Thread):
         self._running = False
         self._soc.shutdown(socket.SHUT_RDWR)
         self._soc.close()
-        self.join()
+        if self.is_alive():
+            self.join()
 
 
 class PeerHandler(Thread):
     """
-    Handle message sent from peers
+    Handle message sent from each peer.
     """
+
     def __init__(self, manager, ID, soc):
         Thread.__init__(self)
         self._manager = manager
@@ -215,6 +251,7 @@ class PeerHandler(Thread):
             except OSError as e:
                 print("[ERROR] error in peer receiving", e)
                 self._manager.submit((DISCONNECT, self))
+                break
             else:
                 if self._running:
                     if len(msg) != 0:
@@ -228,6 +265,9 @@ class PeerHandler(Thread):
                         break
 
     def write(self, msg):
+        """
+        Send message to the peer corresponding to this handler
+        """
         try:
             self._soc.send(msg)
         except OSError as e:
@@ -241,37 +281,36 @@ class PeerHandler(Thread):
         except OSError:
             pass
         self._soc.close()
-        self.join()
+        if self.is_alive():
+            self.join()
 
     def getID(self):
         return self._ID
 
 
-class NetworkManager(Thread):
-    def __init__(self, observer, server):
-        Thread.__init__(self)
+class ServerManager(object):
+    """
+    This is a class that handles traffic between this client and the room server.
+    """
+
+    def __init__(self, manager, server, observer):
+        self._manager = manager
         self._serverSocket = socket.socket()
         try:
             self._serverSocket.connect(server)
         except OSError as e:
             print(e)
             sys.exit(-1)
-        self._quitable = Condition()
-        self._observer = observer
-        self._queue = Queue()
-        self._backward = {}
         self._members = {}
-        self._forward = None
-        self._peerListener = None
-        self._aliveKeeper = None
-        self._connectionKeeper = None
         self._MSID = None
+        self._aliveKeeper = AliveKeeper(self._manager)
+        self._observer = observer
         self._joinMessage = None
-        self._room = None
-        self._me = None
-        self._running = False
 
     def _request(self, message):
+        """
+        Send request to the room server and wait for its response.
+        """
         send = message + "::\r\n"
         try:
             self._serverSocket.send(send.encode("ascii"))
@@ -287,50 +326,130 @@ class NetworkManager(Thread):
                     pass
                 else:
                     print("[ERROR] receiving from server", e)
+                    sys.exit(-1)
             received += m.decode("ascii")
             if len(received) > 4 and received[-4:] == "::\r\n":
                 print("[Server Received]: " + received[:-4])
                 return received[:-4]
 
-    def _connect(self):
-        if self._forward is None:
+    def keepAlive(self, postpone=False):
+        """
+        Method to keep this client alive. If it is necessary to postpone next
+        keepAlive call to aliveKeeper, set postpone to be True.
+        It sends a JOIN request to room server, parses the result and update the 
+        membership list if necessary
+        """
+        if postpone:
             self._aliveKeeper.postpone()
-            self._keepAlive()
-            length = len(self._members)
-            if length != 1:
-                IDs = sorted(self._members.keys())
-                myID = self._me.getID()
-                i = (IDs.index(myID) + 1) % length
-                while IDs[i] != myID:
-                    if IDs[i] not in self._backward:
-                        try:
-                            forward = socket.socket()
-                            forward.connect(self._members[IDs[i]].getHost())
-                        except Exception as e:
-                            print("[Peer Manager] Error connecting to ",
-                                  self._members[IDs[i]], e)
-                            del forward
-                        else:
-                            result = self._handshake(forward)
-                            if result >= 0:
-                                self._addForward(self._members[IDs[i]],
-                                                 result, forward)
-                                break
-                            else:
-                                del forward
+        received = self._request(self._joinMessage)
+        if received[0] == "F":
+            self._observer.update((OBSERVE_ERROR, received[2:]))
+        else:
+            result = received.split(':')[1:]
+            MSID = result[0]
+            if MSID != self._MSID:
+                temp = {}
+                i = 1
+                while i != len(result):
+                    ID = sdbm_hash("".join(result[i: i + 3]))
+                    if ID in self._members:
+                        m = self._members[ID]
                     else:
-                        print("[Peer Manager] {} is in backwards, aborted".
-                              format(self._members[IDs[i]]))
-                    i = (i + 1) % length
-            else:
-                print("[Peer Manager] No others in the room")
-        if self._forward is None:
-            print("[Peer Manager] Connection Failed rescheduled later")
-            self._connectionKeeper.schedule()
+                        m = Member(result[i], result[i + 1],
+                                   int(result[i + 2]))
+                    temp[ID] = m
+                    i += 3
+                added = [temp[m].getName()
+                         for m in temp if m not in self._members]
+                removed = [self._members[m].getName()
+                           for m in self._members if m not in temp]
+                self._members = temp
+                if added:
+                    self._observer.update((OBSERVE_ADD, added))
+                if removed:
+                    self._observer.update((OBSERVE_REMOVE, removed))
+                self._MSID = MSID
+
+    def getMember(self, ID):
+        """
+        get Member by ID. This is to be called by NetworkManager
+        """
+        if ID in self._members:
+            return self._members[ID]
+        self.keepAlive(True)
+        return self._members[ID] if ID in self._members else None
+
+    def getMembers(self):
+        """
+        get All members, This is to be called by NetworkManager
+        """
+        return self._members
+
+    def getIP(self):
+        """
+        get localhost IP
+        """
+        return self._serverSocket.getsockname()[0]
+
+    def doJoin(self, name, room, port):
+        """
+        Setup join message and start AliveKeeper
+        """
+        ip = self._serverSocket.getsockname()[0]
+        self._joinMessage = "J:{}:{}:{}:{}".format(
+            room, name, ip, port
+        )
+
+        self._aliveKeeper.start()
+
+    def doList(self):
+        """
+        Send LIST request to room server, and inform the observer about the result
+        """
+        received = self._request("L")
+        if received[0] == 'F':
+            self._observer.update((OBSERVE_ERROR, received[2:]))
+            return
+        result = []
+        if len(received) != 1:
+            result = received[2:].split(':')
+        self._observer.update((OBSERVE_LIST, result))
+
+    def shutdown(self, joined=True):
+        if joined:
+            self._aliveKeeper.shutdown()
+        try:
+            self._serverSocket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        finally:
+            self._serverSocket.close()
+
+
+class PeerManager(object):
+    """
+    This is a manager handling events related to peers
+    """
+
+    def __init__(self, manager, observer):
+        self._manager = manager
+        self._observer = observer
+        self._backward = {}
+        self._forward = None
+        self._connectionKeeper = ConnectionKeeper(self._manager)
+        self._peerListener = None
+        self._me = None
+        self._room = None
+        self._handshakeMessage = None
 
     def _handshake(self, soc):
+        """
+        It sends a handshake message to soc, which is passed by connect().
+        If it does not receive correct handshake information intime, it will return
+        -1 indicating error. On success, return the msgID of peer.
+        """
         result = False
-        message = "P" + self._joinMessage[1:] + ":{}::\r\n".format(
+        message = self._handshakeMessage + "{}::\r\n".format(
             self._me.getMsgID()
         )
         soc.settimeout(10)
@@ -354,86 +473,36 @@ class NetworkManager(Thread):
         soc.settimeout(None)
         return int(received[2:-4])
 
-    def _getMember(self, ID):
-        if ID in self._members:
-            return self._members[ID]
-        self._aliveKeeper.postpone()
-        self._keepAlive()
-        return self._members[ID] if ID in self._members else None
-
-    def _accept(self, soc):
-        soc.settimeout(10)
-        try:
-            received = soc.recv(1024).decode("ascii")
-        except socket.timeout:
-            print("[ERROR] Not receiving handshaking from {}, closed".format(
-                  socSocket.getpeername()))
-        else:
-            soc.settimeout(None)
-            if len(received) > 4 and received[:2] == "P:" and \
-               received[-4:] == "::\r\n":
-                result = received[2:-4].split(':')
-                if len(result) == 5 and result[0] == self._room and \
-                   result[2] == soc.getpeername()[0]:
-                    ID = sdbm_hash("".join(result[1:4]))
-                    member = self._getMember(ID)
-                    if member is not None:
-                        self._addBackward(member, int(result[4]), soc)
-                        return
-                    else:
-                        print("[Peer Manager] No such user {}, closed".
-                              format(result[1]))
-                else:
-                    print(len(result), result[0], self._room, result[2], soc.getpeername()[0])
-                    print("[ERROR] Received {} from {}, closed".format(
-                           received, soc.getpeername()
-                         ))
-            else:
-                print(len(received), received[:2], received[-4:])
-                print("[ERROR] Received {} from {}, closed".format(
-                        received, soc.getpeername()
-                        ))
-        soc.close()
-
     def _addForward(self, member, msgID, soc):
+        """
+        Add a member, his/her msgID and the corresponding socket to
+        forward link
+        """
         member.setMsgID(msgID)
-        self._forward = PeerHandler(self, member.getID(), soc)
+        self._forward = PeerHandler(self._manager, member.getID(), soc)
         self._forward.start()
-        self._observer.update((FORWARD, member.getName()))
+        self._observer.update((OBSERVE_FORWARD, member.getName()))
 
     def _addBackward(self, member, msgID, soc):
+        """
+        Add a member, his/her msgID and the corresponding socket to
+        backward link
+        """
         member.setMsgID(msgID)
         soc.send("S:{}::\r\n".format(self._me.getMsgID()).encode("ascii"))
-        temp = PeerHandler(self, member.getID(), soc)
+        temp = PeerHandler(self._manager, member.getID(), soc)
         self._backward[member.getID()] = temp
         temp.start()
-        self._observer.update((BACKWARD, member.getName()))
-
-    def _receive(self, message, ID):
-        if message[:2] != "T:" or message[-4:] != "::\r\n":
-            print("[ERROR] receive illegal message: {}, drop",
-                  message)
-            return
-        result = self._processMessage(message[2:-4])
-        if result and result[0] != self._me.getID():
-            member = self._getMember(result[0])
-            if member and member.getName() == result[1]:
-                if not member.hasSent(result[2]):
-                    member.setMsgID(result[2])
-                    self._observer.update((RECEIVE, result[4], result[1]))
-                    self._broadcast([ID, member.getID()],
-                                    message.encode("ascii"))
-                else:
-                    print("[ERROR] receive duplicated message, drop")
-            else:
-                print("[ERROR] receive from unknown sender, drop")
-        else:
-            print("[ERROR] receive message from myself, drop")
+        self._observer.update((OBSERVE_BACKWARD, member.getName()))
 
     def _processMessage(self, message):
+        """
+        Parse the message received from peers. If the message is incorrect,
+        drop it.
+        """
         roomLength = len(self._room)
         if message[:len(self._room)] != self._room:
-            print("[ERROR] Wrong room number received,drop: {}".
+            print("[ERROR] Incorrect room, drop: {}".
                   format(message))
             return None
         message = message[roomLength + 1:]
@@ -449,153 +518,288 @@ class NetworkManager(Thread):
         return result
 
     def _broadcast(self, notSend, message):
+        """
+        Send message to every connected peers except for those in notSend list.
+        """
         if self._forward and self._forward.getID() not in notSend:
             self._forward.write(message)
         for i in self._backward:
             if i not in notSend:
                 self._backward[i].write(message)
 
-    def _disconnect(self, handler):
+    def disconnect(self, handler):
+        """
+        On receiving disconnect request, remove handler from forward or
+        backward link
+        """
         handler.shutdown()
         if self._forward == handler:
             self._forward = None
             print("[FORWARD] Disconnected")
-            self._connect()
-        else:
+            self.connect()
+        elif handler in self._backward:
             temp = self._backward.pop(handler.getID())
             print("[BACKWARD] A peer Disconnected")
 
-    def _keepAlive(self):
-        received = self._request(self._joinMessage)
-        if received[0] == "F":
-            self._observer.update((REMOTE_ERROR, received[2:]))
-        else:
-            result = received.split(':')[1:]
-            MSID = result[0]
-            if MSID != self._MSID:
-                temp = {}
-                i = 1
-                while i != len(result):
-                    ID = sdbm_hash("".join(result[i: i + 3]))
-                    if ID in self._members:
-                        m = self._members[ID]
+    def connect(self):
+        """
+        Proceed the connect procedure. On success, add the target to
+        forward link. On failure, schedule ConnectionKeeper to connect
+        5 seconds later
+        """
+        if self._forward is None:
+            self._manager.keepAlive()
+            members = self._manager.getMembers()
+            length = len(members)
+            if length != 1:
+                IDs = sorted(members.keys())
+                myID = self._me.getID()
+                i = (IDs.index(myID) + 1) % length
+                while IDs[i] != myID:
+                    if IDs[i] not in self._backward:
+                        try:
+                            forward = socket.socket()
+                            forward.connect(members[IDs[i]].getHost())
+                        except Exception as e:
+                            print("[Peer Manager] Error connecting to ",
+                                  members[IDs[i]], e)
+                            del forward
+                        else:
+                            result = self._handshake(forward)
+                            if result >= 0:
+                                self._addForward(members[IDs[i]],
+                                                 result, forward)
+                                break
+                            else:
+                                del forward
                     else:
-                        m = Member(result[i], result[i + 1],
-                                   int(result[i + 2]))
-                    temp[ID] = m
-                    i += 3
-                added = [temp[m].getName()
-                         for m in temp if m not in self._members]
-                removed = [self._members[m].getName()
-                           for m in self._members if m not in temp]
-                self._members = temp
-                if added:
-                    self._observer.update((ADD, added))
-                if removed:
-                    self._observer.update((REMOVE, removed))
-                self._MSID = MSID
+                        print("[Peer Manager] {} is in backwards, aborted".
+                              format(members[IDs[i]]))
+                    i = (i + 1) % length
+            else:
+                print("[Peer Manager] No others in the room")
+        if self._forward is None:
+            print("[Peer Manager] Connection Failed rescheduled later")
+            self._connectionKeeper.schedule()
 
-    def _send(self, rawMessage):
+    def receive(self, message, ID):
+        """
+        Process message received from ID. If the message is valid,
+        check duplication and inform observer. Then broadcast it to all connected
+        peers
+        """
+        if message[:2] != "T:" or message[-4:] != "::\r\n":
+            print("[ERROR] receive illegal message: {}, drop",
+                  message)
+            return
+        result = self._processMessage(message[2:-4])
+        if result and result[0] != self._me.getID():
+            member = self._manager.getMember(result[0])
+            if member and member.getName() == result[1]:
+                if not member.hasSent(result[2]):
+                    member.setMsgID(result[2])
+                    self._observer.update(
+                        (OBSERVE_MESSAGE, result[4], result[1]))
+                    self._broadcast([ID, member.getID()],
+                                    message.encode("ascii"))
+                else:
+                    print("[ERROR] receive duplicated message, drop")
+            else:
+                print("[ERROR] receive from unknown sender, drop")
+        else:
+            print("[ERROR] receive message from myself, drop")
+
+    def accept(self, soc):
+        """
+        Accept a connection from soc. It waits for handshake information,
+        checks its sender and validity, and send back confirmation
+        if necessary. On timeout, it will disconnect soc.
+        """
+        soc.settimeout(10)
+        try:
+            received = soc.recv(1024).decode("ascii")
+        except socket.timeout:
+            print("[ERROR] Not receiving handshaking from {}, closed".format(
+                  socSocket.getpeername()))
+        else:
+            soc.settimeout(None)
+            if len(received) > 4 and received[:2] == "P:" and \
+               received[-4:] == "::\r\n":
+                result = received[2:-4].split(':')
+                if len(result) == 5 and result[0] == self._room and \
+                   result[2] == soc.getpeername()[0]:
+                    ID = sdbm_hash("".join(result[1:4]))
+                    member = self._manager.getMember(ID)
+                    if member is not None:
+                        self._addBackward(member, int(result[4]), soc)
+                        return
+                    else:
+                        print("[Peer Manager] No such user {}, closed".
+                              format(result[1]))
+                else:
+                    print(len(result), result[0], self._room,
+                          result[2], soc.getpeername()[0])
+                    print("[ERROR] Received {} from {}, closed".format(
+                        received, soc.getpeername()
+                    ))
+            else:
+                print(len(received), received[:2], received[-4:])
+                print("[ERROR] Received {} from {}, closed".format(
+                    received, soc.getpeername()
+                ))
+        soc.close()
+
+    def doJoin(self, name, room, ip, port, soc):
+        """
+        Setup handshake message, start ConnectionKeeper and PeerListener.
+        """
+        self._me = Member(name, ip, port)
+        self._peerListener = PeerListener(self._manager, soc)
+        self._room = room
+        self._handshakeMessage = "P:{}:{}:{}:{}:".format(
+            room, name, ip, port
+        )
+        self._connectionKeeper.start()
+        self._peerListener.start()
+
+    def doSend(self, rawMessage):
+        """
+        Send rawMessage out. Inform observer and broadcast to every connected
+        peers.
+        """
         self._me.sendOne()
         message = "T:{}:{}:{}:{}:{}:{}::\r\n".format(
             self._room, self._me.getID(), self._me.getName(),
             self._me.getMsgID(), len(rawMessage), rawMessage
         ).encode("ascii")
-        self._observer.update((RECEIVE, rawMessage, self._me.getName()))
+        self._observer.update(
+            (OBSERVE_MESSAGE, rawMessage, self._me.getName()))
         self._broadcast([], message)
 
-    def _doList(self):
-        received = self._request("L")
-        if received[0] == 'F':
-            print(received)
-            return
-        result = []
-        if len(received) != 1:
-            result = received[2:].split(':')
-        self._observer.update((DO_LIST, result))
+    def shutdown(self):
+        self._connectionKeeper.shutdown()
+        self._peerListener.shutdown()
+        if self._forward:
+            self._forward.shutdown()
+        for handler in self._backward.values():
+            handler.shutdown()
+
+
+class NetworkManager(Thread):
+    """
+    NetworkManager is a class that actually handles all networking requests
+    from other threads.
+    """
+
+    def __init__(self, observer, server):
+        Thread.__init__(self)
+        self._quitable = Event()
+        self._queue = Queue()
+        self._peer = PeerManager(self, observer)
+        self._server = ServerManager(self, server, observer)
 
     def run(self):
-        self._connect()
-        while self._running:
+        """
+        On start, first it tries to connect to other peers.ACCEPT
+        Then it indicates that it is OK to quit. This thread will 
+        wait for tasks to be submitted by other threads and execute them
+        sequentially.
+        """
+        self._peer.connect()
+        self._quitable.set()
+        while True:
             item = self._queue.get()
             if item is None:
-                self._shutdown()
+                print("starting shutting down")
+                self._server.shutdown()
+                self._peer.shutdown()
+                break
             elif item[0] == ACCEPT:
-                self._accept(item[1])
+                self._peer.accept(item[1])
             elif item[0] == RECEIVE:
-                self._receive(item[1], item[2])
+                self._peer.receive(item[1], item[2])
             elif item[0] == CONNECT:
-                self._connect()
+                self._peer.connect()
             elif item[0] == DISCONNECT:
-                self._disconnect(item[1])
+                self._peer.disconnect(item[1])
             elif item[0] == KEEP_ALIVE:
-                self._keepAlive()
+                self._server.keepAlive()
             elif item[0] == SEND:
-                self._send(item[1])
+                self._peer.doSend(item[1])
             elif item[0] == DO_LIST:
-                self._doList()
+                self._server.doList()
 
-    def doList(self):
-        if self.is_alive():
-            self._queue.put((DO_LIST, ))
+    def doList(self, joined):
+        """
+        If this peer has joined, submit to NetworkManager itself.
+        Otherwise call doList directly.
+        """
+        if joined:
+            self.submit((DO_LIST))
         else:
-            self._doList()
+            self._server.doList()
 
-    def doJoin(self, name, room, port):
-        ip = self._serverSocket.getsockname()[0]
-        self._me = Member(name, ip, port)
-        self._room = room
-        self._joinMessage = "J:{}:{}:{}:{}".format(
-            room, name, ip, port
-        )
-        self._aliveKeeper = AliveKeeper(self)
-        self._connectionKeeper = ConnectionKeeper(self)
-        self._peerListener = PeerListener(self, (ip, port))
-        self._aliveKeeper.start()
-        self._connectionKeeper.start()
-        self._peerListener.start()
+    def doJoin(self, name, room, port, soc):
+        """
+        Setup ServerManager and PeerManager.ACCEPT
+        And start running and accepting requests
+        """
+        ip = self._server.getIP()
+        self._server.doJoin(name, room, port)
+        self._peer.doJoin(name, room, ip, port, soc)
         self._running = True
         self.start()
 
     def doSend(self, message):
         self.submit((SEND, message))
 
-    def shutdown(self):
-        if self.is_alive():
+    def shutdown(self, joined):
+        """
+        If this peer has Joined, wait until it is OK to quit,
+        And submit quit request. Otherwise, shutdown ServerManager
+        """
+        if joined:
+            self._quitable.wait()
             self.submit(None)
         else:
-            try:
-                self._serverSocket.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            finally:
-                self._serverSocket.close()
+            self._server.shutdown(False)
 
-    def _shutdown(self):
-        self._running = False
-        if self._aliveKeeper:
-            print("Waiting for alive keeper")
-            self._aliveKeeper.shutdown()
-        if self._connectionKeeper:
-            print("Waiting for connection keeper")
-            self._connectionKeeper.shutdown()
-        if self._peerListener:
-            print("Waiting for peer listener")
-            self._peerListener.shutdown()
-        if self._forward:
-            self._forward.shutdown()
-        for h in self._backward.values():
-            h.shutdown()
+    def keepAlive(self):
+        """
+        keepAlive and postpone AliveKeeper
+        """
+        self._server.keepAlive(True)
+
+    def getMembers(self):
+        return self._server.getMembers()
+
+    def getMember(self, ID):
+        return self._server.getMember(ID)
 
     def submit(self, item):
+        """
+        Submit a task into queue. All tasks will be executed sequentially
+        """
         self._queue.put(item)
 
 
 class P2PChat(object):
+    """
+    This class is an general interface for NetworkManager.
+    It handles all state related exceptions and pushes requests
+    down to NetworkManager if no Exception is raised
+    """
+
     def __init__(self, server, port, observer=None):
         self._state = START_STATE
         self._name = None
         self._port = port
+        self._s = socket.socket()
+        try:
+            self._s.bind(("", port))
+        except OSError as e:
+            print(e)
+            sys.exit(-1)
         self._manager = NetworkManager(observer, server)
 
     def doJoin(self, room):
@@ -608,16 +812,20 @@ class P2PChat(object):
             raise JoinedException()
         if self._state == START_STATE:
             raise UnnamedException()
-        self._manager.doJoin(self._name, room, self._port)
+        self._manager.doJoin(self._name, room, self._port, self._s)
         self._state = JOINED_STATE
 
     def doList(self):
-        self._manager.doList()
+        if self._state == JOINED_STATE:
+            self._manager.doList(True)
+        else:
+            self._manager.doList(False)
 
     def doQuit(self):
-        self._manager.shutdown()
-        if self._manager.is_alive():
-            self._manager.join()
+        if self._state == JOINED_STATE:
+            self._manager.shutdown(True)
+        else:
+            self._manager.shutdown(False)
 
     def doSend(self, message):
         if self._state < JOINED_STATE:
@@ -697,6 +905,9 @@ class P2PChatUI(object):
         sys.exit(0)
 
     def do_Send(self):
+        """
+        Check validity of information and handles illegal transitions
+        """
         message = self.userentry.get()
         if len(message) > 0:
             try:
@@ -769,7 +980,7 @@ class P2PChatUI(object):
         """
         Print updated information.
         """
-        if message[0] == ADD:
+        if message[0] == OBSERVE_ADD:
             for i in message[1]:
                 self._cmd(i)
             if self._first:
@@ -777,19 +988,19 @@ class P2PChatUI(object):
                 self._first = False
             else:
                 self._cmd("[ROOM] user(s) joined:")
-        elif message[0] == REMOVE:
+        elif message[0] == OBSERVE_REMOVE:
             for i in message[1]:
                 self._cmd(i)
             self._cmd("[ROOM] user(s) left:")
-        elif message[0] == RECEIVE:
+        elif message[0] == OBSERVE_MESSAGE:
             self._msg(message[2], message[1])
-        elif message[0] == REMOTE_ERROR:
+        elif message[0] == OBSERVE_ERROR:
             self._cmd(message[1])
-        elif message[0] == FORWARD:
+        elif message[0] == OBSERVE_FORWARD:
             self._cmd("[FORWARD] connected to {}".format(message[1]))
-        elif message[0] == BACKWARD:
+        elif message[0] == OBSERVE_BACKWARD:
             self._cmd("[BACKWARD] {} connected to you".format(message[1]))
-        elif message[0] == DO_LIST:
+        elif message[0] == OBSERVE_LIST:
             if not message[1]:
                 self._cmd("[LIST] No chatroom available")
             else:
