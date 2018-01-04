@@ -2,16 +2,46 @@
 #define P2PCHAT_H
 
 #include <stdio.h>
+#include "vector.h"
+
+
 #define nullptr NULL
+
+#define SUCCESS ${SUCCESS}
 #define JOINED_EXCEPTION ${JOINED_EXCEPTION}
 #define UNJOINED_EXCEPTION ${UNJOINED_EXCEPTION}
 #define UNNAMED_EXCEPTION ${UNNAMED_EXCEPTION}
 
+#define OBSERVE_ADD ${OBSERVE_ADD}
+#define OBSERVE_REMOVE ${OBSERVE_REMOVE}
+#define OBSERVE_MESSAGE ${OBSERVE_MESSAGE}
+#define OBSERVE_ERROR ${OBSERVE_ERROR}
+#define OBSERVE_FORWARD ${OBSERVE_FORWARD}
+#define OBSERVE_BACKWARD ${OBSERVE_BACKWARD}
+#define OBSERVE_LIST ${OBSERVE_LIST}
+
+typedef enum state {
+    START_STATE, NAMED_STATE, JOINED_STATE
+} state;
+
+typedef struct vector_str {
+    char** data;
+    int size;
+    int capacity;
+} vector_str;
+
+typedef struct chat {
+    char* name;
+    int port;
+    state current_state;
+} chat_t;
+
+USE_VECTOR(int);
 
 int do_user(const char*);
 int do_join(const char*);
 int do_send(const char*);
-void do_list();
+vector_str do_list();
 void do_quit();
 
 

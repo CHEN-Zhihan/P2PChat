@@ -8,61 +8,69 @@ UNJOINED_EXCEPTION = ${UNJOINED_EXCEPTION}
 UNNAMED_EXCEPTION = ${UNNAMED_EXCEPTION}
 SUCCESS = ${SUCCESS}
 
+OBSERVE_ADD = ${OBSERVE_ADD}
+OBSERVE_REMOVE = ${OBSERVE_REMOVE}
+OBSERVE_MESSAGE = ${OBSERVE_MESSAGE}
+OBSERVE_ERROR = ${OBSERVE_ERROR}
+OBSERVE_FORWARD = ${OBSERVE_FORWARD}
+OBSERVE_BACKWARD = ${OBSERVE_BACKWARD}
+OBSERVE_LIST = ${OBSERVE_LIST}
 
-class P2PChat(object):
-    """
-    This class is an general interface for NetworkManager.
-    It handles all state related exceptions and pushes requests
-    down to NetworkManager if no Exception is raised
-    """
 
-    def __init__(self, server, port, observer=None):
-        self._state = START_STATE
-        self._name = None
-        self._port = port
-        self._s = socket.socket()
-        try:
-            self._s.bind(("", port))
-        except OSError as e:
-            print(e)
-            sys.exit(-1)
-        self._manager = NetworkManager(observer, server)
+# class P2PChat(object):
+#     """
+#     This class is an general interface for NetworkManager.
+#     It handles all state related exceptions and pushes requests
+#     down to NetworkManager if no Exception is raised
+#     """
 
-    def doJoin(self, room):
-        """
-        Check the state, if it is named and unjoined,
-        give NetworkManager corresponding information and
-        call do_Join(). Update state afterwards.
-        """
-        if self._state >= JOINED_STATE:
-            raise JoinedException()
-        if self._state == START_STATE:
-            raise UnnamedException()
-        self._manager.doJoin(self._name, room, self._port, self._s)
-        self._state = JOINED_STATE
+#     def __init__(self, server, port, observer=None):
+#         self._state = START_STATE
+#         self._name = None
+#         self._port = port
+#         self._s = socket.socket()
+#         try:
+#             self._s.bind(("", port))
+#         except OSError as e:
+#             print(e)
+#             sys.exit(-1)
+#         self._manager = NetworkManager(observer, server)
 
-    def doList(self):
-        if self._state == JOINED_STATE:
-            self._manager.doList(True)
-        else:
-            self._manager.doList(False)
+#     def doJoin(self, room):
+#         """
+#         Check the state, if it is named and unjoined,
+#         give NetworkManager corresponding information and
+#         call do_Join(). Update state afterwards.
+#         """
+#         if self._state >= JOINED_STATE:
+#             raise JoinedException()
+#         if self._state == START_STATE:
+#             raise UnnamedException()
+#         self._manager.doJoin(self._name, room, self._port, self._s)
+#         self._state = JOINED_STATE
 
-    def doQuit(self):
-        if self._state == JOINED_STATE:
-            self._manager.shutdown(True)
-        else:
-            self._manager.shutdown(False)
+#     def doList(self):
+#         if self._state == JOINED_STATE:
+#             self._manager.doList(True)
+#         else:
+#             self._manager.doList(False)
 
-    def doSend(self, message):
-        if self._state < JOINED_STATE:
-            raise UnjoinedException()
-        self._manager.doSend(message)
+#     def doQuit(self):
+#         if self._state == JOINED_STATE:
+#             self._manager.shutdown(True)
+#         else:
+#             self._manager.shutdown(False)
 
-    def doUser(self, username):
-        if self._state > NAMED_STATE:
-            raise JoinedException()
-        self._name = username
-        self._state = NAMED_STATE
+#     def doSend(self, message):
+#         if self._state < JOINED_STATE:
+#             raise UnjoinedException()
+#         self._manager.doSend(message)
+
+#     def doUser(self, username):
+#         if self._state > NAMED_STATE:
+#             raise JoinedException()
+#         self._name = username
+#         self._state = NAMED_STATE
 
 
 class P2PChatUI(object):
@@ -70,7 +78,6 @@ class P2PChatUI(object):
         #
         # Set up of Basic UI
         #
-        # self._chat = P2PChat((argv[1], int(argv[2])), int(argv[3]), self)
         self._first = True
         win = Tk()
         win.title("MyP2PChat")
@@ -165,7 +172,13 @@ class P2PChatUI(object):
         Call P2PChat's do_List.
         Handle exception and print results.
         """
-        chat.doList()
+        rooms = chat.do_list()
+        if len(rooms) == 0:
+            self._cmd("[INFO] No rooms available")
+            return
+        for room in rooms:
+            self._cmd(room)
+            self._cmd("[INFO] Listing all rooms")
 
     def do_User(self):
         """
@@ -175,7 +188,7 @@ class P2PChatUI(object):
         username = self.userentry.get()
         if username:
             if self._valid(username):
-                result = chat.doUser(username)
+                result = chat.do_user(username)
                 if result == JOINED_EXCEPTION:
                     self._cmd("[ERROR] Cannot Rename after Join")
                 else:
@@ -233,11 +246,15 @@ class P2PChatUI(object):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 2:
         print("P2PChat.py <server address> <server port no.> <my port no.>")
         sys.exit(2)
-    P2PChatUI(sys.argv)
+    ui = P2PChatUI(sys.argv)
+
+    def callback(message):
+        ui.update(message)
+    chat.set_callback(callback)
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()

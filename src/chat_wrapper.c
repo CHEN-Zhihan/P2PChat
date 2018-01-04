@@ -3,10 +3,15 @@
 
 static PyObject* callback = nullptr;
 static PyObject* chat_do_user(PyObject* self, PyObject* args);
+static PyObject* chat_do_list(PyObject* self, PyObject* args);
 static PyObject* chat_set_callback(PyObject* self, PyObject* args);
+char* string_list(int);
+char* build_tuple(int, char*);
+PyObject* to_py_string_list(char**, int);
 
 static PyMethodDef Methods[] = {
-    {"doUser", chat_do_user, METH_VARARGS, "this is help message?"},
+    {"do_user", chat_do_user, METH_VARARGS, "this is help message?"},
+    {"do_list", chat_do_list, METH_VARARGS, "gg"},
     {"set_callback", chat_set_callback, METH_VARARGS, "this is help message?"},
     {nullptr, nullptr, 0, nullptr}};
 
@@ -24,6 +29,14 @@ static PyObject* chat_do_user(PyObject* self, PyObject* args) {
     result = do_user(data);
     return Py_BuildValue("i", result);
 }
+
+static PyObject* chat_do_list(PyObject* self, PyObject* args) {
+    vector_str list = do_list();
+    PyObject* result = to_py_string_list(list.data, list.size);
+    free(list.data);
+    return result;
+}
+
 static PyObject* chat_set_callback(PyObject* self, PyObject* args) {
     PyObject* result = nullptr;
     PyObject* temp = nullptr;
@@ -40,4 +53,15 @@ static PyObject* chat_set_callback(PyObject* self, PyObject* args) {
     return result;
 }
 
-void observe_add(const char**, )
+PyObject* to_py_string_list(char** list, int s) {
+    PyObject* result = PyList_New(s);
+    if (!result) {
+        return nullptr;
+    }
+    int i = 0;
+    for (i = 0; i != s; ++i) {
+        PyObject* unicode = PyUnicode_FromString(list[i]);
+        PyList_SetItem(result, i, unicode);
+    }
+    return result;
+}

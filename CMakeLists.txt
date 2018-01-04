@@ -13,8 +13,16 @@ if(PYTHON)
 
     set(JOINED_EXCEPTION -1)
     set(SUCCESS 0)
-    set(UNJOINED_EXCETPION -2)
+    set(UNJOINED_EXCEPTION -2)
     set(UNNAMED_EXCEPTION -3)
+
+    set(OBSERVE_ADD 1)
+    set(OBSERVE_REMOVE 2)
+    set(OBSERVE_MESSAGE 3)
+    set(OBSERVE_ERROR 4)
+    set(OBSERVE_FORWARD 5)
+    set(OBSERVE_BACKWARD 6)
+    set(OBSERVE_LIST 7)
 
     configure_file(${SETUP_PY_IN} ${SETUP_PY})
     configure_file(${P2PCHAT_PY_IN} ${P2PCHAT_PY})

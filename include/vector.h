@@ -3,12 +3,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#define VECTOR(type)  \
-    struct {          \
-        type* data;   \
-        int size;     \
-        int capacity; \
-    }
+#define USE_VECTOR(type)            \
+    typedef struct vector__##type { \
+        type* data;                 \
+        int size;                   \
+        int capacity;               \
+    } vector_##type;
 
 #define VECTOR_PUSH_BACK(v, type, element)                                   \
     {                                                                        \
@@ -21,7 +21,7 @@
 
 #define VECTOR_INIT_CAPACITY(v, type, i)        \
     {                                           \
-        type n = (i);                           \
+        int n = (i);                            \
         v.data = malloc(n * sizeof(*(v.data))); \
         if (!v.data) {                          \
             fputs("malloc failed\n", stderr);   \
@@ -33,8 +33,6 @@
 
 #define VECTOR_INIT(v) VECTOR_INIT_CAPACITY(v, i)
 
-#define VECTOR_AT(v, i) v.data[i]
-#define VECTOR_SIZE(v) v.size
 #define VECTOR_POP_BACK(v) \
     if (v.size > 0) {      \
         --v.size;          \
