@@ -8,7 +8,13 @@ if(PYTHON)
     set(SETUP_PY "${chat_BUILD_DIR}/setup.py")
     set(P2PCHAT_PY_IN "${chat_SOURCE_DIR}/python/P2PChat.py.in")
     set(P2PCHAT_PY "${chat_BUILD_DIR}/P2PChat.py")
+    set(CHAT_H_IN "${chat_SOURCE_DIR}/include/chat.h.in")
+    set(CHAT_H "${chat_SOURCE_DIR}/include/chat.h")
+
+    set(USER_JOINED -1)
+
     configure_file(${SETUP_PY_IN} ${SETUP_PY})
     configure_file(${P2PCHAT_PY_IN} ${P2PCHAT_PY})
+    configure_file(${CHAT_H_IN} ${CHAT_H})
     add_custom_target(setup ALL COMMAND ${PYTHON} ${SETUP_PY} build --build-base ${chat_BUILD_DIR} --build-lib .)
 endif()

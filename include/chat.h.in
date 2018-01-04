@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 #define nullptr NULL
-int print(const char*);
+#define USER_JOINED ${USER_JOINED}
+
+int doUser(const char*);
 
 #endif  // P2PCHAT_H

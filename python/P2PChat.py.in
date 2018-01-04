@@ -14,6 +14,9 @@
 import sys
 sys.path.append("${chat_BUILD_DIR}")
 import chat
+
+
+USER_JOINED = ${USER_JOINED}
 chat.doJoin("hello world")
 chat.doSend("this is send")
 print(chat.doList())
