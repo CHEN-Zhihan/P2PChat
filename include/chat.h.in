@@ -3,8 +3,17 @@
 
 #include <stdio.h>
 #define nullptr NULL
-#define USER_JOINED ${USER_JOINED}
+#define JOINED_EXCEPTION ${JOINED_EXCEPTION}
+#define UNJOINED_EXCEPTION ${UNJOINED_EXCEPTION}
+#define UNNAMED_EXCEPTION ${UNNAMED_EXCEPTION}
 
-int doUser(const char*);
+
+int do_user(const char*);
+int do_join(const char*);
+int do_send(const char*);
+void do_list();
+void do_quit();
+
+
 
 #endif  // P2PCHAT_H
