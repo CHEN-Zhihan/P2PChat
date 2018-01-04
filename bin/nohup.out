@@ -1,0 +1,23 @@
+
+
+/*****************************************************************/
+/*    COMP3234 Computer and Communication Networks               */
+/*    Programming Project                                        */
+/*    P2P Chat Application - Room Server                         */
+/*                                                               */
+/*    USAGE:  ./room_server    [port]                            */
+/*            Press <Ctrl + C> to terminate the server           */
+/*****************************************************************/
+
+
+
+Starting room server ...
+Chat server is up and listening at port 2333
+Monitor Thread: Wake-up. Check idle connections.
+Monitor Thread: Wake-up. Check idle connections.
+Kill by SIGTERM (kill -15)
+Shutdown server .....
+[debug]<server_close> Kill the monitor thread
+[debug]<server_close> Remove all rooms
+[debug]<server_close> Disconnect remaining client sockets and threads
+Done
