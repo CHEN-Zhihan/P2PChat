@@ -1,10 +1,13 @@
 #include <Python.h>
+#include <arpa/inet.h>
 #include "chat.h"
 
 static PyObject* callback = nullptr;
 static PyObject* chat_do_user(PyObject* self, PyObject* args);
 static PyObject* chat_do_list(PyObject* self, PyObject* args);
 static PyObject* chat_set_callback(PyObject* self, PyObject* args);
+static PyObject* chat_set_address(PyObject* self, PyObject* args);
+
 char* string_list(int);
 char* build_tuple(int, char*);
 PyObject* to_py_string_list(char**, int);
@@ -13,6 +16,7 @@ static PyMethodDef Methods[] = {
     {"do_user", chat_do_user, METH_VARARGS, "this is help message?"},
     {"do_list", chat_do_list, METH_VARARGS, "gg"},
     {"set_callback", chat_set_callback, METH_VARARGS, "this is help message?"},
+    {"set_address", chat_set_address, METH_VARARGS, "gg"},
     {nullptr, nullptr, 0, nullptr}};
 
 static struct PyModuleDef chatDef = {PyModuleDef_HEAD_INIT, "chat", "", -1,
@@ -28,6 +32,16 @@ static PyObject* chat_do_user(PyObject* self, PyObject* args) {
     }
     result = do_user(data);
     return Py_BuildValue("i", result);
+}
+
+static PyObject* chat_set_address(PyObject* self, PyObject* args) {
+    char* address;
+    int server_port, port;
+    if (!PyArg_ParseTuple(args, "sii", &address, &server_port, &port)) {
+        return nullptr;
+    }
+    set_address(address, server_port, port);
+    return Py_None;
 }
 
 static PyObject* chat_do_list(PyObject* self, PyObject* args) {
