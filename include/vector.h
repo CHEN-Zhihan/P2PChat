@@ -31,11 +31,37 @@
         v.capacity = n;                         \
     }
 
-#define VECTOR_INIT(v) VECTOR_INIT_CAPACITY(v, i)
+#define VECTOR_INIT(v) VECTOR_INIT_CAPACITY(v, 1)
 
 #define VECTOR_POP_BACK(v) \
     if (v.size > 0) {      \
         --v.size;          \
     }
+
+#define VECTOR_POINTER_POP_BACK(v) \
+    if (v.size > 0) {\
+        free(v.data[--v.size]);\
+    }
+
+#define VECTOR_FREE(v) free(v.data)
+
+#define VECTOR_POINTER_FREE(v) \
+    do {\
+        int i = 0;\
+        for (i = 0; i != v.size; ++i) {\
+            free(v.data[i]);\
+        }\
+        free(v.data);\
+    } while (0);
+    
+
+typedef struct vector_str {
+    char** data;
+    int size;
+    int capacity;
+} vector_str;
+
+USE_VECTOR(int);
+
 
 #endif  // VECTOR_H

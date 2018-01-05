@@ -78,7 +78,7 @@ class P2PChatUI(object):
         #
         # Set up of Basic UI
         #
-        chat.set_address("127.0.0.1", 32340, int(argv[1]))
+        chat.setup("127.0.0.1", 32340, int(argv[1]))
         self._first = True
         win = Tk()
         win.title("MyP2PChat")

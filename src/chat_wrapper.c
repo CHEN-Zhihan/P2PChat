@@ -1,12 +1,15 @@
 #include <Python.h>
 #include <arpa/inet.h>
 #include "chat.h"
+#include "vector.h"
+
+static struct chat_t chat;
 
 static PyObject* callback = nullptr;
 static PyObject* chat_do_user(PyObject* self, PyObject* args);
 static PyObject* chat_do_list(PyObject* self, PyObject* args);
 static PyObject* chat_set_callback(PyObject* self, PyObject* args);
-static PyObject* chat_set_address(PyObject* self, PyObject* args);
+static PyObject* chat_setup(PyObject* self, PyObject* args);
 
 char* string_list(int);
 char* build_tuple(int, char*);
@@ -16,7 +19,7 @@ static PyMethodDef Methods[] = {
     {"do_user", chat_do_user, METH_VARARGS, "this is help message?"},
     {"do_list", chat_do_list, METH_VARARGS, "gg"},
     {"set_callback", chat_set_callback, METH_VARARGS, "this is help message?"},
-    {"set_address", chat_set_address, METH_VARARGS, "gg"},
+    {"setup", chat_setup, METH_VARARGS, "gg"},
     {nullptr, nullptr, 0, nullptr}};
 
 static struct PyModuleDef chatDef = {PyModuleDef_HEAD_INIT, "chat", "", -1,
@@ -30,24 +33,24 @@ static PyObject* chat_do_user(PyObject* self, PyObject* args) {
     if (!PyArg_ParseTuple(args, "s", &data)) {
         return nullptr;
     }
-    result = do_user(data);
+    result = do_user(&chat, data);
     return Py_BuildValue("i", result);
 }
 
-static PyObject* chat_set_address(PyObject* self, PyObject* args) {
+static PyObject* chat_setup(PyObject* self, PyObject* args) {
     char* address;
     int server_port, port;
     if (!PyArg_ParseTuple(args, "sii", &address, &server_port, &port)) {
         return nullptr;
     }
-    set_address(address, server_port, port);
+    setup(&chat, address, server_port, port);
     return Py_None;
 }
 
 static PyObject* chat_do_list(PyObject* self, PyObject* args) {
-    vector_str list = do_list();
+    vector_str list = do_list(&chat);
     PyObject* result = to_py_string_list(list.data, list.size);
-    free(list.data);
+    VECTOR_POINTER_FREE(list);
     return result;
 }
 

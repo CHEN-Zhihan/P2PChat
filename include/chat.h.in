@@ -7,6 +7,7 @@
 
 
 #define nullptr NULL
+#define BUFFER_SIZE 1024
 
 #define SUCCESS ${SUCCESS}
 #define JOINED_EXCEPTION ${JOINED_EXCEPTION}
@@ -25,28 +26,32 @@ typedef enum state {
     START_STATE, NAMED_STATE, JOINED_STATE
 } state;
 
-typedef struct vector_str {
-    char** data;
-    int size;
-    int capacity;
-} vector_str;
 
-typedef struct chat {
-    char* name;
+
+struct server_t {
+    int local_server_soc;
+    char local_server_buffer[BUFFER_SIZE];
+    char server_buffer[BUFFER_SIZE];
+    int server_soc;
+    pthread_t event_thread;
+};
+
+struct chat_t {
+    const char* name;
     int port;
     state current_state;
     int local_soc;
-} chat_t;
+    char local_buffer[BUFFER_SIZE];
+    struct server_t server;
+};
 
-USE_VECTOR(int);
 
-int do_user(const char*);
-int do_join(const char*);
-int do_send(const char*);
-vector_str do_list();
-void do_quit();
-void set_address(char*, int, int);
-
+int do_user(struct chat_t*, const char*);
+int do_join(struct chat_t*, const char*);
+int do_send(struct chat_t*, const char*);
+vector_str do_list(struct chat_t*);
+void do_quit(struct chat_t*);
+void setup(struct chat_t*, char*, int, int);
 
 
 #endif  // P2PCHAT_H

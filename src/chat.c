@@ -5,27 +5,25 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "server.h"
+#include "parser.h"
+#include "local_server.h"
 
-chat_t chat;
-
-void set_address(char* serv_addr, int serv_port, int port) {
-    set_server_address(serv_addr, serv_port, port);
+void setup(struct chat_t* chat, char* serv_addr, int serv_port, int port) {
+    chat->local_soc = setup_local_server(&chat->server, port);
+    connect_to_server(&chat->server, serv_addr, serv_port);
 }
 
-int do_user(const char* s) {
-    if (chat.current_state == JOINED_STATE) {
+int do_user(struct chat_t* chat, const char* s) {
+    if (chat->current_state == JOINED_STATE) {
         return JOINED_EXCEPTION;
     }
-    chat.name = s;
-    chat.current_state = NAMED_STATE;
+    chat->name = s;
+    chat->current_state = NAMED_STATE;
     return SUCCESS;
 }
 
-vector_str do_list() {
-    if (!connected()) {
-        setup_server();
-    }
-    vector_str result = request_do_list();
+vector_str do_list(struct chat_t* chat) {
+    transit(chat->local_soc, "L::\r\r", chat->local_buffer);
+    vector_str result = parse_do_list(chat->local_buffer);
     return result;
 }
