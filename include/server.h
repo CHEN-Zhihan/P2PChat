@@ -3,13 +3,16 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include "chat.h"
 
 #define nullptr NULL
 #define BUFFER_SIZE 1024
 void set_server_address(const char*, int, int);
 void connect_to_server();
 bool connected();
-int setup_server();
+void setup_server();
+vector_str request_do_list();
+
 char* request(const char*, int socket);
 
 void join();

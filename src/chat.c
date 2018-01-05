@@ -23,9 +23,9 @@ int do_user(const char* s) {
 }
 
 vector_str do_list() {
-    vector_str result;
     if (!connected()) {
-        chat.local_soc = setup_server();
+        setup_server();
     }
+    vector_str result = request_do_list();
     return result;
 }

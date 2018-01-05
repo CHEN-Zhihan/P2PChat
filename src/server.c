@@ -8,7 +8,7 @@
 local_server_t server;
 char buffer[BUFFER_SIZE];
 sem_t server_ready;
-void request_loop();
+void event_loop();
 void setup_local_server();
 void start_local_server();
 int get_local_server();
@@ -71,11 +71,11 @@ void setup_local_server() {
 
 void start_local_server() {
     sem_init(&server_ready, 0, 0);
-    pthread_create(&server.loop, nullptr, request_loop, nullptr);
+    pthread_create(&server.loop, nullptr, event_loop, nullptr);
     sem_wait(&server_ready);
 }
 
-void request_loop() {
+void event_loop() {
     if (listen(server.local_soc, 5) < 0) {
         fprintf(stderr, "[ERROR] cannot listen %s\n", strerror(errno));
         exit(EXIT_FAILURE);

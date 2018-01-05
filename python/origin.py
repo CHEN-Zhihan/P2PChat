@@ -950,7 +950,12 @@ class P2PChatUI(object):
         Call P2PChat's do_List.
         Handle exception and print results.
         """
-        self._chat.doList()
+        rooms = self._chat.doList()
+        if len(rooms) == 0:
+            self._cmd("[INFO] no chat rooms available")
+            return
+        for room in rooms:
+            self._cmd(room)
 
     def do_User(self):
         """
