@@ -20,7 +20,7 @@ struct sockaddr_in prepare_address(const char* addr, int port) {
 }
 
 int get_server_socket(const char* addr, int port) {
-    int fd = socket(AF_INET, SOCK_STREAM, SOCK_CLOEXEC);
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
     handle_error(fd, "get server socket failed");
     struct sockaddr_in address = prepare_address(addr, port);
     handle_error(bind(fd, (const struct sockaddr*)&address, sizeof(address)),
@@ -29,11 +29,13 @@ int get_server_socket(const char* addr, int port) {
 }
 
 int get_client_socket(const char* addr, int port) {
-    int fd = socket(AF_INET, SOCK_STREAM, SOCK_CLOEXEC);
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
     handle_error(fd, "get client socket failed");
     struct sockaddr_in address = prepare_address(addr, port);
+    char error_msg[200];
+    snprintf(error_msg, 200, "connect to %s:%d failed", addr, port);
     handle_error(connect(fd, (const struct sockaddr*)&address, sizeof(address)),
-                 "connect failed");
+                 error_msg);
     return fd;
 }
 

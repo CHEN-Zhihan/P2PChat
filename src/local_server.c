@@ -3,14 +3,14 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <stdbool.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <stdbool.h>
-#include <string.h>
 #include "chat.h"
-#include "network.h"
 #include "common.h"
+#include "network.h"
 
 sem_t semaphore;
 
@@ -42,7 +42,7 @@ void* event_loop(void* s) {
     handle_error(
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server->local_server_soc, &event),
         " add server socket to epoll failed");
-    fprintf(stdout, "[INFO] entering event loop");
+    fprintf(stdout, "[INFO] entering event loop\n");
     sem_post(&semaphore);
     while (true) {
         int nb_of_available_sockets = 0, i = 0;
@@ -71,17 +71,19 @@ void accept_new_socket(int local_server_soc, int epoll_fd) {
         if (new_fd == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             break;
         }
-        int result = getnameinfo(
-            (const struct sockaddr*)&addr, sizeof(addr), host_buffer, sizeof(host_buffer), serv_buffer,
-            sizeof(serv_buffer), NI_NUMERICHOST | NI_NUMERICSERV);
+        int result =
+            getnameinfo((const struct sockaddr*)&addr, sizeof(addr),
+                        host_buffer, sizeof(host_buffer), serv_buffer,
+                        sizeof(serv_buffer), NI_NUMERICHOST | NI_NUMERICSERV);
         if (result == 0) {
-            fprintf(stdout, "[INFO] accept connection from %s:%s\n",
+            fprintf(stdout, "[INFO] accepted connection from %s:%s\n",
                     host_buffer, serv_buffer);
         }
         make_non_block(new_fd);
         event.data.fd = new_fd;
         event.events = EPOLLIN | EPOLLET;
-        handle_error(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &event), "add to epoll failed");
+        handle_error(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &event),
+                     "add to epoll failed");
     }
 }
 
@@ -109,18 +111,17 @@ void handle_socket(struct server_t* server, int epoll_fd, int income_fd) {
 }
 
 void connect_to_server(struct server_t* server, const char* serv_addr,
-                              int serv_port) {
+                       int serv_port) {
     server->server_soc = get_client_socket(serv_addr, serv_port);
     fprintf(stdout, "[INFO] connected to server %s:%d\n", serv_addr, serv_port);
 }
 
 void transit(int soc, char* msg, char* buffer) {
-    handle_error(write(soc, msg, strlen(msg)),
-                 "write to soc failed");
+    handle_error(write(soc, msg, strlen(msg)), "write to soc failed");
     read(soc, buffer, BUFFER_SIZE);
 }
 
-void handle_message(struct server_t* server, char* msg, int income_fd) { 
+void handle_message(struct server_t* server, char* msg, int income_fd) {
     if (LAST(msg) == '\r') {
         LAST(msg) = '\n';
         transit(server->server_soc, msg, server->server_buffer);

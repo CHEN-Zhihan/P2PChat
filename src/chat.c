@@ -5,11 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "parser.h"
 #include "local_server.h"
+#include "parser.h"
 
 void setup(struct chat_t* chat, char* serv_addr, int serv_port, int port) {
     chat->local_soc = setup_local_server(&chat->server, port);
+    fprintf(stdout, "[INFO] Complete setting up local server\n");
     connect_to_server(&chat->server, serv_addr, serv_port);
 }
 
