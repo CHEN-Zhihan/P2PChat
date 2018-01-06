@@ -13,6 +13,7 @@
 #include "network.h"
 
 sem_t semaphore;
+pthread_mutex_t transit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void* event_loop(void*);
 void start_local_server(struct server_t*);
@@ -117,8 +118,10 @@ void connect_to_server(struct server_t* server, const char* serv_addr,
 }
 
 void transit(int soc, char* msg, char* buffer) {
+    pthread_mutex_lock(&transit_mutex);
     handle_error(write(soc, msg, strlen(msg)), "write to soc failed");
     read(soc, buffer, BUFFER_SIZE);
+    pthread_mutex_unlock(&transit_mutex);
 }
 
 void handle_message(struct server_t* server, char* msg, int income_fd) {

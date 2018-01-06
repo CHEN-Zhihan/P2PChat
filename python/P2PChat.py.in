@@ -159,7 +159,7 @@ class P2PChatUI(object):
         room = self.userentry.get()
         if room:
             if self._valid(room):
-                result = chat.doJoin(room)
+                result = chat.do_join(room)
                 if result == JOINED_EXCEPTION:
                     self._cmd("[ERROR] Cannot join another room")
                 elif result == UNNAMED_EXCEPTION:

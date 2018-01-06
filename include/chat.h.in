@@ -38,8 +38,10 @@ struct server_t {
 
 struct chat_t {
     const char* name;
-    int port;
+    pthread_t keep_alive_thread;
     state current_state;
+    char* join_msg;
+    int port;
     int local_soc;
     char local_buffer[BUFFER_SIZE];
     struct server_t server;

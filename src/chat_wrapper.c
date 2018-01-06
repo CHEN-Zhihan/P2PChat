@@ -10,6 +10,7 @@ static PyObject* chat_do_user(PyObject* self, PyObject* args);
 static PyObject* chat_do_list(PyObject* self, PyObject* args);
 static PyObject* chat_set_callback(PyObject* self, PyObject* args);
 static PyObject* chat_setup(PyObject* self, PyObject* args);
+static PyObject* chat_do_join(PyObject* self, PyObject* args);
 
 char* string_list(int);
 char* build_tuple(int, char*);
@@ -19,6 +20,7 @@ static PyMethodDef Methods[] = {
     {"do_user", chat_do_user, METH_VARARGS, "this is help message?"},
     {"do_list", chat_do_list, METH_VARARGS, "gg"},
     {"set_callback", chat_set_callback, METH_VARARGS, "this is help message?"},
+    {"do_join", chat_do_join, METH_VARARGS, "no help"},
     {"setup", chat_setup, METH_VARARGS, "gg"},
     {nullptr, nullptr, 0, nullptr}};
 
@@ -52,6 +54,16 @@ static PyObject* chat_do_list(PyObject* self, PyObject* args) {
     PyObject* result = to_py_string_list(list.data, list.size);
     VECTOR_POINTER_FREE(list);
     return result;
+}
+
+static PyObject* chat_do_join(PyObject* self, PyObject* args) {
+    char* room;
+    int result;
+    if (!PyArg_ParseTuple(args, "s", &room)) {
+        return nullptr;
+    }
+    result = do_join(&chat, room);
+    return Py_BuildValue("i", result);
 }
 
 static PyObject* chat_set_callback(PyObject* self, PyObject* args) {

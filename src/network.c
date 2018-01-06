@@ -1,6 +1,7 @@
 #include "network.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,4 +46,28 @@ void make_non_block(int fd) {
     handle_error(flags, "get flag failed");
     flags |= O_NONBLOCK;
     handle_error(fcntl(fd, F_SETFL, flags), "set flag failed");
+}
+
+char* get_local_IP() {
+    struct ifaddrs* ifAddrStruct = nullptr;
+    struct ifaddrs* ifa = nullptr;
+    void* tmpAddrPtr = nullptr;
+    getifaddrs(&ifAddrStruct);
+    for (ifa = ifAddrStruct; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) {
+            continue;
+        }
+        if (ifa->ifa_addr->sa_family == AF_INET) {  // check it is IP4
+            // is a valid IP4 Address
+            tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+            char addressBuffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            if (strcmp(addressBuffer, "127.0.0.1") != 0) {
+                freeifaddrs(ifAddrStruct);
+                return strdup(addressBuffer);
+            }
+        }
+    }
+    handle_error(-1, "cannot find local address");
+    return nullptr;
 }
