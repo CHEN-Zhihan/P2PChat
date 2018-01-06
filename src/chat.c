@@ -32,7 +32,7 @@ int do_user(struct chat_t* chat, const char* s) {
 }
 
 vector_str do_list(struct chat_t* chat) {
-    transit(chat->local_soc, "L::\r\r", chat->local_buffer);
+    sync_request(chat->local_soc, "L::\r\r", chat->local_buffer);
     vector_str result = parse_do_list(chat->local_buffer);
     return result;
 }
@@ -48,9 +48,8 @@ int do_join(struct chat_t* chat, const char* room) {
     sprintf(port, "%d", chat->port);
     chat->join_msg = build_join_msg(chat->name, room, port);
     chat->join_msg[strlen(chat->join_msg) - 2] = '\r';
-    int result = process_join(chat);
-    setup_keep_alive(chat);
-    return result;
+    async_request(chat->local_soc, chat->join_msg);
+    return SUCCESS;
 }
 
 char* build_join_msg(const char* name, const char* room, const char* port) {
@@ -77,8 +76,4 @@ inline void append_colon(char* s) {
     int size = strlen(s);
     s[size] = ':';
     s[size + 1] = '\0';
-}
-
-int process_join(struct chat_t* chat) {
-    transit(chat->local_soc, chat->join_msg, chat->local_buffer);
 }

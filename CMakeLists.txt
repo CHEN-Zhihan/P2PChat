@@ -15,6 +15,7 @@ if(PYTHON)
     set(SUCCESS 0)
     set(UNJOINED_EXCEPTION -2)
     set(UNNAMED_EXCEPTION -3)
+    set(REMOTE_EXCEPTION -4)
 
     set(OBSERVE_ADD 1)
     set(OBSERVE_REMOVE 2)

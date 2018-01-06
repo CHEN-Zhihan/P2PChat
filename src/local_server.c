@@ -20,7 +20,7 @@ void start_local_server(struct server_t*);
 void accept_new_socket(int, int);
 void handle_socket(struct server_t*, int, int);
 void handle_message(struct server_t*, char*, int);
-void transit(int, char*, char*);
+void sync_request(int, char*, char*);
 
 int setup_local_server(struct server_t* server, int port) {
     server->local_server_soc = get_server_socket("127.0.0.1", port);
@@ -117,17 +117,27 @@ void connect_to_server(struct server_t* server, const char* serv_addr,
     fprintf(stdout, "[INFO] connected to server %s:%d\n", serv_addr, serv_port);
 }
 
-void transit(int soc, char* msg, char* buffer) {
+void sync_request(int soc, char* msg, char* buffer) {
     pthread_mutex_lock(&transit_mutex);
-    handle_error(write(soc, msg, strlen(msg)), "write to soc failed");
+    handle_error(write(soc, msg, strlen(msg)), "sync write to soc failed");
     read(soc, buffer, BUFFER_SIZE);
+    pthread_mutex_unlock(&transit_mutex);
+}
+
+void async_request(int soc, char* msg) {
+    pthread_mutex_lock(&transit_mutex);
+    handle_error(write(soc, msg, strlen(msg)), "async write to soc failed");
     pthread_mutex_unlock(&transit_mutex);
 }
 
 void handle_message(struct server_t* server, char* msg, int income_fd) {
     if (LAST(msg) == '\r') {
         LAST(msg) = '\n';
-        transit(server->server_soc, msg, server->server_buffer);
+        sync_request(server->server_soc, msg, server->server_buffer);
         write(income_fd, server->server_buffer, strlen(server->server_buffer));
+    } else if (msg[0] == 'M') {
+        handle_do_join(server->server_buffer);
+    } else if (msg[0] == 'F') {
+        handle_server_error(server->server_buffer);
     }
 }

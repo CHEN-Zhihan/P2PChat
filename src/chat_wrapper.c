@@ -13,7 +13,6 @@ static PyObject* chat_setup(PyObject* self, PyObject* args);
 static PyObject* chat_do_join(PyObject* self, PyObject* args);
 
 char* string_list(int);
-char* build_tuple(int, char*);
 PyObject* to_py_string_list(char**, int);
 
 static PyMethodDef Methods[] = {
@@ -93,4 +92,23 @@ PyObject* to_py_string_list(char** list, int s) {
         PyList_SetItem(result, i, unicode);
     }
     return result;
+}
+
+PyObject* build_observe_tuple(int flag, PyObject* o) {
+    PyObject* result = PyTuple_New(2);
+    PyObject* f = PyLong_FromLong(flag);
+    PyTuple_SetItem(result, 0, f);
+    PyTuple_SetItem(result, 1, o);
+    return result;
+}
+
+void callback_add(vector_str members) {
+    PyObject* result = to_py_string_list(members.data);
+    PyObject* tuple = build_observe_tuple(OBSERVE_ADD, result);
+    PyObject* python_result = PyObject_Call(callback, nullptr, tuple);
+    Py_DECREF(tuple);
+    if (python_result == nullptr) {
+        fprintf(stderr, "[ERROR] callback_add failed");
+    }
+    Py_DECREF(python_result);
 }

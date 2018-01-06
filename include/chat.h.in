@@ -13,6 +13,7 @@
 #define JOINED_EXCEPTION ${JOINED_EXCEPTION}
 #define UNJOINED_EXCEPTION ${UNJOINED_EXCEPTION}
 #define UNNAMED_EXCEPTION ${UNNAMED_EXCEPTION}
+#define REMOTE_EXCEPTION ${REMOTE_EXCEPTION}
 
 #define OBSERVE_ADD ${OBSERVE_ADD}
 #define OBSERVE_REMOVE ${OBSERVE_REMOVE}
@@ -51,6 +52,7 @@ struct chat_t {
 int do_user(struct chat_t*, const char*);
 int do_join(struct chat_t*, const char*);
 int do_send(struct chat_t*, const char*);
+void handle_join(struct chat_t*);
 vector_str do_list(struct chat_t*);
 void do_quit(struct chat_t*);
 void setup(struct chat_t*, char*, int, int);
