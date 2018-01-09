@@ -219,17 +219,9 @@ class P2PChatUI(object):
         Print updated information.
         """
         if message[0] == OBSERVE_ADD:
-            for i in message[1]:
-                self._cmd(i)
-            if self._first:
-                self._cmd("[ROOM] List all members:")
-                self._first = False
-            else:
-                self._cmd("[ROOM] user(s) joined:")
+            self._cmd("[ROOM] user {} joined".format(message[1]))
         elif message[0] == OBSERVE_REMOVE:
-            for i in message[1]:
-                self._cmd(i)
-            self._cmd("[ROOM] user(s) left:")
+            self._cmd("[ROOM] user {} left".format(message[1]))
         elif message[0] == OBSERVE_MESSAGE:
             self._msg(message[2], message[1])
         elif message[0] == OBSERVE_ERROR:

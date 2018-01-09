@@ -20,6 +20,7 @@ void start_local_server(struct server_t*);
 void accept_new_socket(int, int);
 void handle_socket(struct server_t*, int, int);
 void handle_message(struct server_t*, char*, int);
+void handle_do_join(struct server_t*, char*);
 void sync_request(int, char*, char*);
 
 int setup_local_server(struct server_t* server, int port) {
@@ -118,6 +119,8 @@ void connect_to_server(struct server_t* server, const char* serv_addr,
 }
 
 void sync_request(int soc, char* msg, char* buffer) {
+    msg[strlen(msg) - 2] = 'l';
+    msg[strlen(msg) - 3] = 'r';
     pthread_mutex_lock(&transit_mutex);
     handle_error(write(soc, msg, strlen(msg)), "sync write to soc failed");
     read(soc, buffer, BUFFER_SIZE);
@@ -131,13 +134,51 @@ void async_request(int soc, char* msg) {
 }
 
 void handle_message(struct server_t* server, char* msg, int income_fd) {
-    if (LAST(msg) == '\r') {
+    if (LAST(msg) == 'l') {
         LAST(msg) = '\n';
+        bool sync = msg[strlen(msg) - 3] == 's';
+        msg[strlen(msg) - 3] = '\r';
         sync_request(server->server_soc, msg, server->server_buffer);
-        write(income_fd, server->server_buffer, strlen(server->server_buffer));
-    } else if (msg[0] == 'M') {
-        handle_do_join(server->server_buffer);
-    } else if (msg[0] == 'F') {
-        handle_server_error(server->server_buffer);
+        if (sync) {
+            write(income_fd, server->server_buffer,
+                  strlen(server->server_buffer));
+        }
     }
 }
+
+void handle_do_join(struct server_t* server, char* buffer) {
+    vector_member members = parse_member(buffer);
+    int i = 0;
+    for (i = 0; i != server->members.size; ++i) {
+        bool found = false;
+        int j = 0;
+        for (j = 0; j != members.size; ++j) {
+            if (strcmp(server->members.data[i].name, members.data[j].name) ==
+                0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            callback_remove(server->members.data[i].name);
+        }
+    }
+    for (i = 0; i != members.size; ++i) {
+        bool found = false;
+        int j = 0;
+        for (j = 0; j != server->members.size; ++j) {
+            if (strcmp(server->members.data[j].name, members.data[i].name) ==
+                0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            callback_add(members.data[i].name);
+        }
+    }
+    free_vector_member(server->members);
+    server->members = members;
+}
+
+void connect_to_peers(struct server_t* server) {}

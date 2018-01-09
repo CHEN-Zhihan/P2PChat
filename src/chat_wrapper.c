@@ -102,13 +102,17 @@ PyObject* build_observe_tuple(int flag, PyObject* o) {
     return result;
 }
 
-void callback_add(vector_str members) {
-    PyObject* result = to_py_string_list(members.data);
-    PyObject* tuple = build_observe_tuple(OBSERVE_ADD, result);
+void callback_string(char* str, int flag) {
+    PyObject* result = PyUnicode_FromString(str);
+    PyObject* tuple = build_observe_tuple(flag, result);
     PyObject* python_result = PyObject_Call(callback, nullptr, tuple);
     Py_DECREF(tuple);
     if (python_result == nullptr) {
-        fprintf(stderr, "[ERROR] callback_add failed");
+        fprintf(stderr, "[ERROR] callback_string failed");
     }
     Py_DECREF(python_result);
 }
+
+void callback_remove(char* name) { callback_string(name, OBSERVE_REMOVE); }
+
+void callback_add(char* name) { callback_string(name, OBSERVE_ADD); }

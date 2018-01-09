@@ -3,6 +3,7 @@
 
 #include "vector.h"
 
-void callback_add(vector_str);
+void callback_add(char*);
+void callback_remove(char*);
 
 #endif  // CHAT_WRAPPER_H

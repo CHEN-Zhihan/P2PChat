@@ -39,21 +39,20 @@
     }
 
 #define VECTOR_POINTER_POP_BACK(v) \
-    if (v.size > 0) {\
-        free(v.data[--v.size]);\
+    if (v.size > 0) {              \
+        free(v.data[--v.size]);    \
     }
 
 #define VECTOR_FREE(v) free(v.data)
 
-#define VECTOR_POINTER_FREE(v) \
-    do {\
-        int i = 0;\
-        for (i = 0; i != v.size; ++i) {\
-            free(v.data[i]);\
-        }\
-        free(v.data);\
+#define VECTOR_POINTER_FREE(v)          \
+    do {                                \
+        int i = 0;                      \
+        for (i = 0; i != v.size; ++i) { \
+            free(v.data[i]);            \
+        }                               \
+        free(v.data);                   \
     } while (0);
-    
 
 typedef struct vector_str {
     char** data;
@@ -63,5 +62,25 @@ typedef struct vector_str {
 
 USE_VECTOR(int);
 
+typedef struct member {
+    char* name;
+    char* ip;
+    int port;
+} member;
+
+typedef struct vector_member {
+    member* data;
+    int size;
+    int capacity;
+} vector_member;
+
+void free_vector_member(vector_member m) {
+    int i = 0;
+    for (i = 0; i != m.size; ++i) {
+        free(m.data[i].name);
+        free(m.data[i].ip);
+    }
+    free(m.data);
+}
 
 #endif  // VECTOR_H

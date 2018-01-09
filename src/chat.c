@@ -32,7 +32,7 @@ int do_user(struct chat_t* chat, const char* s) {
 }
 
 vector_str do_list(struct chat_t* chat) {
-    sync_request(chat->local_soc, "L::\r\r", chat->local_buffer);
+    sync_request(chat->local_soc, "L::\r\n", chat->local_buffer);
     vector_str result = parse_do_list(chat->local_buffer);
     return result;
 }
@@ -47,8 +47,17 @@ int do_join(struct chat_t* chat, const char* room) {
     char port[10];
     sprintf(port, "%d", chat->port);
     chat->join_msg = build_join_msg(chat->name, room, port);
-    chat->join_msg[strlen(chat->join_msg) - 2] = '\r';
-    async_request(chat->local_soc, chat->join_msg);
+    sync_request(chat->local_soc, chat->join_msg, chat->local_buffer);
+    if (chat->local_buffer[0] == 'E') {
+        return REMOTE_EXCEPTION;
+    }
+    vector_member members = parse_member(chat->local_buffer);
+    chat->server.members = members;
+    if (members.size != 1) {
+        connect_to_peers(&chat->server);
+    }
+    start_keep_alive(&chat->server);
+    chat->current_state = JOINED_STATE;
     return SUCCESS;
 }
 

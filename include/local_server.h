@@ -7,6 +7,8 @@
 
 int setup_local_server(struct server_t*, int);
 void connect_to_server(struct server_t*, const char*, int);
+void connect_to_peer(struct server_t*);
+void start_keep_alive(struct server_t*);
 void sync_request(int, char*, char*);
 void async_request(int, char*);
 #endif  // LOCAL_SERVER_H
