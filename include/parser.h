@@ -3,6 +3,7 @@
 #include "vector.h"
 
 vector_str parse_do_list(char*);
+vector_member parse_member(char* msg);
+int parse_msgid(char*);
 
-
-#endif // PARSER_H
+#endif  // PARSER_H

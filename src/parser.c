@@ -62,3 +62,9 @@ vector_member parse_member(char* msg) {
     }
     return result;
 }
+
+int parse_msgid(char* msg) {
+    int result;
+    sscanf(msg, "S:%d::\r\n", &result);
+    return result;
+}

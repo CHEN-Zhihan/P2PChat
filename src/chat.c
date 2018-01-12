@@ -60,7 +60,7 @@ int do_join(struct chat_t* chat, const char* room) {
     if (chat->server.members.size != 1) {
         connect_to_peers(&chat->server, chat->partial_handshake_msg);
     }
-    start_keep_alive(&chat->server, chat->join_msg);
+    start_keep_alive(&chat->server, chat->local_soc, chat->join_msg);
     chat->current_state = JOINED_STATE;
     free(ip);
     return SUCCESS;
