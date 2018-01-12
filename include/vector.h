@@ -3,11 +3,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#define USE_VECTOR(type)            \
-    typedef struct vector__##type { \
-        type* data;                 \
-        int size;                   \
-        int capacity;               \
+#define USE_VECTOR(type)           \
+    typedef struct vector_##type { \
+        type* data;                \
+        int size;                  \
+        int capacity;              \
     } vector_##type;
 
 #define VECTOR_PUSH_BACK(v, type, element)                                   \
@@ -66,6 +66,7 @@ typedef struct member {
     char* name;
     char* ip;
     int port;
+    long hash_id;
 } member;
 
 typedef struct vector_member {
@@ -74,13 +75,15 @@ typedef struct vector_member {
     int capacity;
 } vector_member;
 
-void free_vector_member(vector_member m) {
-    int i = 0;
-    for (i = 0; i != m.size; ++i) {
-        free(m.data[i].name);
-        free(m.data[i].ip);
-    }
-    free(m.data);
-}
+typedef struct peer {
+    long hash_id;
+    int soc;
+} peer;
+
+USE_VECTOR(peer);
+
+void free_vector_member(vector_member m);
+
+void sort_members(vector_member* v, int, int);
 
 #endif  // VECTOR_H

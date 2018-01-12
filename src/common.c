@@ -10,3 +10,23 @@ void handle_error(int result, const char* msg) {
         exit(EXIT_FAILURE);
     }
 }
+
+long sdbm_hash(char* str) {
+    long hash = 0;
+    int i = 0;
+    for (i = 0; i != strlen(str); ++i) {
+        hash = str[i] + (hash << 6) + (hash << 16) - hash;
+    }
+    return hash & 0xFFFFFFFFFFFFFFFF;
+}
+
+long hash(char* name, char* ip, char* port) {
+    char* hash_str = malloc(sizeof(*hash_str) *
+                            (strlen(port) + strlen(ip) + strlen(name) + 1));
+    strcpy(hash_str, name);
+    strcat(hash_str, ip);
+    strcat(hash_str, port);
+    long result = sdbm_hash(hash_str);
+    free(hash_str);
+    return result;
+}

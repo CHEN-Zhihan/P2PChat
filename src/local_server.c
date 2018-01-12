@@ -11,6 +11,7 @@
 #include "chat.h"
 #include "common.h"
 #include "network.h"
+#include "peer.h"
 
 sem_t semaphore;
 pthread_mutex_t transit_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -22,6 +23,8 @@ void handle_socket(struct server_t*, int, int);
 void handle_message(struct server_t*, char*, int);
 void handle_do_join(struct server_t*, char*);
 void sync_request(int, char*, char*);
+int connect_to_peer(struct server_t*, member);
+int handshake(struct server_t*, int, char*);
 
 int setup_local_server(struct server_t* server, int port) {
     server->local_server_soc = get_server_socket("127.0.0.1", port);
@@ -181,4 +184,23 @@ void handle_do_join(struct server_t* server, char* buffer) {
     server->members = members;
 }
 
-void connect_to_peers(struct server_t* server) {}
+void connect_to_peers(struct server_t* server, char* partial_msg) {
+    int index = 0;
+    for (index = 0; server->members.data[index].hash_id != server->my_hash_id;
+         ++index) {
+        ;
+    }
+    ++index;
+    while (server->members.data[index].hash_id != server->my_hash_id) {
+        if (is_backward(server->backwards,
+                        server->members.data[index].hash_id)) {
+        } else {
+            member peer = server->members.data[index];
+            int peer_soc = get_client_socket(peer.ip, peer.port);
+            if (peer_soc > 0) {
+                int result = handshake(server, peer_soc, partial_msg);
+            }
+        }
+        index = (index + 1) % server->members.size;
+    }
+}

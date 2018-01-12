@@ -36,6 +36,9 @@ struct server_t {
     int server_soc;
     pthread_t event_thread;
     vector_member members;
+    vector_peer backwards;
+    peer forward;
+    long my_hash_id;
 };
 
 struct chat_t {
@@ -43,6 +46,7 @@ struct chat_t {
     pthread_t keep_alive_thread;
     state current_state;
     char* join_msg;
+    char* partial_handshake_msg;
     int port;
     int local_soc;
     char local_buffer[BUFFER_SIZE];

@@ -53,6 +53,8 @@ vector_member parse_member(char* msg) {
             ++i;
         }
         char* port = strndup(msg + j, i - j);
+
+        temp.hash_id = hash(name, ip, port);
         temp.port = atoi(port);
         free(port);
         VECTOR_PUSH_BACK(result, member, temp);
