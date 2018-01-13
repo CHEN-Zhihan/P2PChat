@@ -6,7 +6,7 @@
 
 vector_str parse_do_list(char* msg) {
     vector_str result;
-    VECTOR_INIT_CAPACITY(result, char*, 1);
+    VECTOR_INIT(result);
     if (msg[2] == ':') {
         return result;
     }
@@ -24,9 +24,37 @@ vector_str parse_do_list(char* msg) {
     return result;
 }
 
+vector_str parse_join_names(char* msg) {
+    vector_str result;
+    VECTOR_INIT(result);
+    int i = 3;
+    while (msg[i] != ':') {
+        while (msg[i] != ':') {
+            ++i;
+        }
+        ++i;
+        int j = i;
+        while (msg[i] != ':') {
+            ++i;
+        }
+        char* name = strndup(msg + j, i - j);
+        VECTOR_PUSH_BACK(result, char*, name);
+        ++i;
+        while (msg[i] != ':') {
+            ++i;
+        }
+        ++i;
+        while (msg[i] != ':') {
+            ++i;
+        }
+        ++i;
+    }
+    return result;
+}
+
 vector_member parse_member(char* msg) {
     vector_member result;
-    VECTOR_INIT_CAPACITY(result, member, 1);
+    VECTOR_INIT(result);
     int i = 2;
     member temp;
     while (msg[i + 1] != ':') {

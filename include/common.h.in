@@ -1,0 +1,24 @@
+#ifndef COMMON_H
+#define COMMON_H
+
+#define BUFFER_SIZE 1024
+#define LAST(str) str[strlen(str) - 1]
+#define nullptr NULL
+#define SUCCESS ${SUCCESS}
+#define JOINED_EXCEPTION ${JOINED_EXCEPTION}
+#define UNJOINED_EXCEPTION ${UNJOINED_EXCEPTION}
+#define UNNAMED_EXCEPTION ${UNNAMED_EXCEPTION}
+#define REMOTE_EXCEPTION ${REMOTE_EXCEPTION}
+
+#define OBSERVE_ADD ${OBSERVE_ADD}
+#define OBSERVE_REMOVE ${OBSERVE_REMOVE}
+#define OBSERVE_MESSAGE ${OBSERVE_MESSAGE}
+#define OBSERVE_ERROR ${OBSERVE_ERROR}
+#define OBSERVE_FORWARD ${OBSERVE_FORWARD}
+#define OBSERVE_BACKWARD ${OBSERVE_BACKWARD}
+#define OBSERVE_LIST ${OBSERVE_LIST}
+
+
+void handle_error(int, const char*);
+long hash(char*, char*, char*);
+#endif  // COMMON_H

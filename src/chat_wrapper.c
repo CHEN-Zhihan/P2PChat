@@ -18,7 +18,7 @@ PyObject* to_py_string_list(char**, int);
 static PyMethodDef Methods[] = {
     {"do_user", chat_do_user, METH_VARARGS, "this is help message?"},
     {"do_list", chat_do_list, METH_VARARGS, "gg"},
-    {"set_callback", chat_set_callback, METH_VARARGS, "this is help message?"},
+    {"set_callback", chat_set_callback, METH_VARARGS, "gg"},
     {"do_join", chat_do_join, METH_VARARGS, "no help"},
     {"setup", chat_setup, METH_VARARGS, "gg"},
     {nullptr, nullptr, 0, nullptr}};

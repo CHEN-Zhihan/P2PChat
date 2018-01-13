@@ -10,6 +10,13 @@
         int capacity;              \
     } vector_##type;
 
+#define USE_STRUCT_VECTOR(type)    \
+    typedef struct vector_##type { \
+        struct type* data;         \
+        int size;                  \
+        int capacity;              \
+    } vector_##type;
+
 #define VECTOR_PUSH_BACK(v, type, element)                                   \
     {                                                                        \
         type t = (element);                                                  \
@@ -19,7 +26,7 @@
         v.data[v.size++] = t;                                                \
     }
 
-#define VECTOR_INIT_CAPACITY(v, type, i)        \
+#define VECTOR_INIT_CAPACITY(v, i)              \
     {                                           \
         int n = (i);                            \
         v.data = malloc(n * sizeof(*(v.data))); \
@@ -61,29 +68,5 @@ typedef struct vector_str {
 } vector_str;
 
 USE_VECTOR(int);
-
-typedef struct member {
-    char* name;
-    char* ip;
-    int port;
-    long hash_id;
-} member;
-
-typedef struct vector_member {
-    member* data;
-    int size;
-    int capacity;
-} vector_member;
-
-typedef struct peer {
-    long hash_id;
-    int soc;
-} peer;
-
-USE_VECTOR(peer);
-
-void free_vector_member(vector_member m);
-
-void sort_members(vector_member* v, int, int);
 
 #endif  // VECTOR_H

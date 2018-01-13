@@ -1,22 +1,6 @@
 
 #define BUFFER_SIZE 1024
 
-struct socket_handler_t {
-    int fd;
-    char buffer[BUFFER_SIZE];
-};
-
-struct peer_t {
-    char* name;
-    char* ip;
-    int port;
-};
-
-struct connected_peer_t {
-    struct peer_t peer;
-    int soc;
-};
-
 enum state { A, B, C };
 
 struct chat_t {
@@ -28,39 +12,6 @@ struct chat_t {
     int (*do_list)();
     int (*do_send)(char*);
     int (*do_quit)();
-};
-
-typedef struct vector_peer {
-    struct peer_t* data;
-    int size;
-    int capacity;
-} vector_peer;
-
-typedef struct vector_connected_peer {
-    struct connected_peer_t* data;
-    int size;
-    int capacity;
-} vector_connected_peer;
-
-struct alive_keeper_t {
-    pthread_t keep_thrd;
-    sem_t notice_sem;
-    bool running;
-};
-
-struct server_manager_t {
-    struct socket_handler_t handler;
-    pthread_mutex_t mutex;
-    void (*async_request)(char*);
-    char* (*sync_request)(char*);
-};
-
-struct peer_manager_t {
-    int server;
-    struct connected_peer_t forward;
-    char peer_buffer[BUFFER_SIZE];
-    vector_connected_peer backwards;
-    int msgid;
 };
 
 struct network_manager_t {

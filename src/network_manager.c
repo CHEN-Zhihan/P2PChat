@@ -1,0 +1,108 @@
+#include "network_manager.h"
+#include <stdbool.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+void setup_peer_server(struct network_manager_t*, int);
+void setup_event_loop(struct network_manager_t*);
+void* event_loop(void*);
+void* keep_alive_loop(void*);
+void add_to_epoll(int, int);
+void update_member_list(struct network_manager_t*);
+int handle_local_message(struct network_manager_t*);
+
+int setup_network(struct network_manager_t* manager, char* addr, char* local_ip,
+                  int server_port, int local_port) {
+    manager->server.fd = get_client_socket(addr, server_port);
+    manager->local_server = get_server_socket(local_ip, 0);
+    int local_port = get_socket_port(manager->local_server);
+    setup_peer_server(&manager->peer, local_ip, local_port);
+    pthread_create(&manager->event_handler, nullptr, &event_loop,
+                   (void*)manager);
+    return get_client_socket(local_ip, local_port);
+}
+
+void* event_loop(void* m) {
+    struct network_manager_t* manager = (struct network_manager_t*)m;
+    manager->local.fd = accept(manager->local_server, nullptr, nullptr);
+    int epoll = epoll_create1(0);
+    add_to_epoll(epoll, local_handler);
+    add_to_epoll(epoll, manager->peer.server);
+    static const int MAX_EVENTS = 10;
+    struct epoll_event event, events[MAX_EVENTS];
+    while (true) {
+        int available_number = 0, i = 0;
+        available_number = epoll_wait(epoll, events, MAX_EVENTS, -1);
+        for (i = 0; i != available_number; ++i) {
+            uint32_t e = events[i].events;
+            if (e & EPOLLERR || e & EPOLLHUP || !(e & EPOLLIN)) {
+                handle_error(-1, "epoll wait failed");
+            }
+            int fd = events[i].data.fd;
+            if (fd == manager->local.fd) {
+                int result = handle_local_message(&manager);
+                if (result < 0) {
+                    break;
+                }
+            } else if (fd == manager->peer.server) {
+                int new_peer_fd = handle_new_peer(&manager->peer);
+                add_to_epoll(epoll, new_peer_fd);
+            } else {
+                int result = handle_peer_message(&manager->peer, fd);
+                if (result < 0) {
+                    handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
+                                 "remove from epoll failed");
+                }
+            }
+        }
+    }
+    close_connected_peers(&manager->peer);
+    close(epoll);
+    close(manager->local.fd);
+    return nullptr;
+}
+
+void add_to_epoll(int epoll, int fd) {
+    struct epoll_event event;
+    make_non_block(fd);
+    event.data.fd = fd;
+    event.events = EPOLLIN | EPOLLET;
+    handle_error(epoll_ctl(epoll, EPOLL_CTL_ADD, fd, &event),
+                 "add to epoll failed");
+}
+
+int handle_local_message(struct network_manager_t* manager) {
+    read(manager->local.fd, manager->local.buffer, BUFFER_SIZE);
+    char request_flag = manager->local.buffer[0];
+    if (request_flag == 'Q') {
+        return -1;
+    }
+    if (request_flag == 'L' || request_flag == 'J' || request_flag == 'A') {
+        if (request_flag == 'A') {
+            manager->local.buffer[0] = 'J';
+        }
+        write(manager->server.fd, manager->local.buffer,
+              strlen(manager->local.buffer));
+        read(manager->server.fd, manager->server.buffer, BUFFER_SIZE);
+        if (request_flag == 'L' || request_flag == 'J') {
+            write(manager->local.fd, manager->server.buffer,
+                  strlen(manager->server.buffer));
+        }
+        if (request_flag == 'A' || request_flag == 'J') {
+            update_member_list(manager);
+        }
+    } else if (request_flag == 'P') {
+        handshake(&manager->peer, manager->partial_handshake_msg,
+                  manager->peers);
+    } else if (request_flag == 'T') {
+        send_msg(&manager->peer, manager->local.buffer);
+    }
+}
+
+void setup_keep_alive(struct network_manager_t* manager, char* join_msg,
+                      int soc) {
+    manager->alive_keeper.join_msg = join_msg;
+    manager->alive_keeper.join_msg[0] = 'A';
+    manager->alive_keeper.local_client = soc;
+    pthread_create(&manager->alive_keeper.monitor, nullptr, &keep_alive_loop,
+                   (void*)&manager->alive_keeper);
+}

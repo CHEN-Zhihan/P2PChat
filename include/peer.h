@@ -1,4 +1,19 @@
-#include "chat.h"
+#ifndef PEER_H
+#define PEER_H
+#include "vector.h"
 
-bool is_backward(vector_peer, long);
-int handshake(struct server_t*, int);
+struct peer_t {
+    char* name;
+    char* ip;
+    int port;
+};
+
+struct connected_peer_t {
+    struct peer_t peer;
+    int soc;
+};
+
+USE_STRUCT_VECTOR(peer_t);
+USE_STRUCT_VECTOR(connected_peer_t);
+
+#endif  // PEER_H

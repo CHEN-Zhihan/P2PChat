@@ -71,3 +71,10 @@ char* get_local_IP() {
     handle_error(-1, "cannot find local address");
     return nullptr;
 }
+
+int get_socket_port(int fd) {
+    struct sockaddr_in addr;
+    socklen_t addrlen;
+    handle_error(getsockname(fd, &addr, &addrlen), "getsockname failed");
+    return addr.sin_port;
+}
