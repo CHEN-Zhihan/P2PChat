@@ -52,8 +52,8 @@ vector_str parse_join_names(char* msg) {
     return result;
 }
 
-vector_member parse_member(char* msg) {
-    vector_member result;
+vector_peer_t parse_peers(char* msg) {
+    vector_peer_t result;
     VECTOR_INIT(result);
     int i = 2;
     member temp;

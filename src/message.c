@@ -27,12 +27,20 @@ char* build_join_msg(char* room, char* name, char* ip, int port) {
     return result;
 }
 
-char* build_partial_handshake_msg(char* room, char* name, char* ip,
-                                  char* port) {
+char* build_partial_handshake_msg(char* room, char* name, char* ip, int port) {
     char* partial_msg = build_info_msg(room, name, ip, port);
     size_t size = strlen("P:") + strlen(partial_msg) + 2;
     char* result = malloc(sizeof(*result) * size);
     snprintf(result, sizeof(*result) * size, "P:%s:", partial_msg);
     free(partial_msg);
+    return result;
+}
+
+char* build_handshake_msg(char* partial, int msgid) {
+    char msg[10];
+    snprintf(msg, 10, "%d", msgid);
+    size_t size = strlen(partial) + 1 + strlen(msg) + strlen("::\r\n") + 1;
+    char* result = malloc(sizeof(*result) * size);
+    snprintf(result, sizeof(*result) * size, "%s:%s::\r\n", partial, msg);
     return result;
 }

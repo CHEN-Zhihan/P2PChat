@@ -2,7 +2,8 @@
 #include <stdbool.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-void setup_peer_server(struct network_manager_t*, int);
+#include <time.h>
+
 void setup_event_loop(struct network_manager_t*);
 void* event_loop(void*);
 void* keep_alive_loop(void*);
@@ -42,15 +43,23 @@ void* event_loop(void* m) {
                 int result = handle_local_message(&manager);
                 if (result < 0) {
                     break;
+                } else if (result > 0) {
+                    add_to_epoll(epoll, result);
                 }
             } else if (fd == manager->peer.server) {
                 int new_peer_fd = handle_new_peer(&manager->peer);
                 add_to_epoll(epoll, new_peer_fd);
+            } else if (fd == manager->peer.forward.soc) {
+                handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
+                             "remove from epoll failed");
+                free_connected_peer(&manager->peer.forward);
+                int new_fd = connect_to_peer(&manager->peer, manager->peers);
+                if (new_fd > 0) {
+                    add_to_epoll(epoll, new_fd);
+                }
             } else {
                 int result = handle_peer_message(&manager->peer, fd);
                 if (result < 0) {
-                    handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
-                                 "remove from epoll failed");
                 }
             }
         }
@@ -73,6 +82,7 @@ void add_to_epoll(int epoll, int fd) {
 int handle_local_message(struct network_manager_t* manager) {
     read(manager->local.fd, manager->local.buffer, BUFFER_SIZE);
     char request_flag = manager->local.buffer[0];
+    int result = 0;
     if (request_flag == 'Q') {
         return -1;
     }
@@ -90,12 +100,13 @@ int handle_local_message(struct network_manager_t* manager) {
         if (request_flag == 'A' || request_flag == 'J') {
             update_member_list(manager);
         }
-    } else if (request_flag == 'P') {
-        handshake(&manager->peer, manager->partial_handshake_msg,
-                  manager->peers);
+        if (request_flag == 'J') {
+            result = connect_to_peer(&manager->peer, manager->peers);
+        }
     } else if (request_flag == 'T') {
         send_msg(&manager->peer, manager->local.buffer);
     }
+    return result;
 }
 
 void setup_keep_alive(struct network_manager_t* manager, char* join_msg,
@@ -103,6 +114,51 @@ void setup_keep_alive(struct network_manager_t* manager, char* join_msg,
     manager->alive_keeper.join_msg = join_msg;
     manager->alive_keeper.join_msg[0] = 'A';
     manager->alive_keeper.local_client = soc;
+    sem_init(&manager->alive_keeper.timeout, 0, 0);
     pthread_create(&manager->alive_keeper.monitor, nullptr, &keep_alive_loop,
                    (void*)&manager->alive_keeper);
+}
+
+void* keep_alive_loop(void* k) {
+    struct alive_keeper_t* alive_keeper = (struct alive_keeper_t*)k;
+    while (alive_keeper->running) {
+        struct timespec ts;
+        handle_error(clock_gettime(CLOCK_REALTIME, &ts),
+                     "clock_gettime failed");
+        ts.tv_sec += 20;
+        sem_timedwait(&alive_keeper->timeout, &ts);
+        if (!alive_keeper->running) {
+            break;
+        }
+        async_request(alive_keeper->local_client, alive_keeper->join_msg);
+    }
+    sem_destroy(&alive_keeper->timeout);
+}
+
+void compare_and_callback(vector_peer_t p1, vector_peer_t p2,
+                          void (*callback)(char*)) {
+    int i = 0;
+    for (i = 0; i != p1.size; ++i) {
+        int j = 0;
+        bool found = false;
+        for (j = 0; j != p2; size; ++j) {
+            if (p1.data[i].hash_id == p2.data[j].hash_id) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            callback(p1.data[i].name);
+        }
+    }
+}
+
+void update_member_list(struct network_manager_t* manager) {
+    vector_peer_t peers = parse_peers(manager->server.buffer);
+    compare_and_callback(manager->peers, peers, &callback_remove);
+    compare_and_callback(peers, manager->peers, &callback_add);
+    if (manager->peers.size != 0) {
+        free_vector_peer(manager->peers);
+    }
+    manager->peers = peers;
 }

@@ -24,7 +24,6 @@ struct network_manager_t {
     int local_server;
     int local_client;
     vector_peer_t peers;
-    char* partial_handshake_msg;
     pthread_t event_handler;
 };
 
