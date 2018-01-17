@@ -20,5 +20,5 @@
 
 
 void handle_error(int, const char*);
-long hash(char*, char*, char*);
+long hash(char*, char*, int);
 #endif  // COMMON_H

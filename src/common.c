@@ -20,12 +20,14 @@ long sdbm_hash(char* str) {
     return hash & 0xFFFFFFFFFFFFFFFF;
 }
 
-long hash(char* name, char* ip, char* port) {
+long hash(char* name, char* ip, int port) {
+    char port_str[10];
+    snprintf(port_str, 10, "%d", port);
     char* hash_str = malloc(sizeof(*hash_str) *
-                            (strlen(port) + strlen(ip) + strlen(name) + 1));
+                            (strlen(port_str) + strlen(ip) + strlen(name) + 1));
     strcpy(hash_str, name);
     strcat(hash_str, ip);
-    strcat(hash_str, port);
+    strcat(hash_str, port_str);
     long result = sdbm_hash(hash_str);
     free(hash_str);
     return result;

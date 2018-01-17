@@ -44,9 +44,11 @@ void sort_peers(vector_peer_t* v, int begin, int end) {
     sort_peers(v, mid + 1, end);
 }
 
-struct connected_peer_t get_connected_peer(int soc, struct peer_t p) {
+struct connected_peer_t get_connected_peer(struct peer_t p, int soc,
+                                           int msgid) {
     struct connected_peer_t result;
     result.soc = soc;
+    result.msgid = msgid;
     result.peer.hash_id = p.hash_id;
     result.peer.ip = strdup(p.ip);
     result.peer.name = strdup(p.name);

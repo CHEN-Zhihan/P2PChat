@@ -26,6 +26,25 @@
         v.data[v.size++] = t;                                                \
     }
 
+#define VECTOR_STRUCT_PUSH_BACK(v, type, element)                            \
+    {                                                                        \
+        struct type t = (element);                                           \
+        if (v.size == v.capacity) {                                          \
+            v.data = realloc(v.data, (v.capacity *= 2) * sizeof(*(v.data))); \
+        }                                                                    \
+        v.data[v.size++] = t;                                                \
+    }
+
+#define VECTOR_ERASE(v, i, f)               \
+    {                                       \
+        int j = i;                          \
+        f(v.data[j]);                       \
+        for (j = i; j != v.size - 1; ++j) { \
+            v.data[j] = v.data[j + 1];      \
+        }                                   \
+        --v.size;                           \
+    }
+
 #define VECTOR_INIT_CAPACITY(v, i)              \
     {                                           \
         int n = (i);                            \

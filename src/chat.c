@@ -40,6 +40,10 @@ vector_str do_join(struct chat_t* chat, char* room) {
         free(chat->manager.peer.partial_handshake_msg);
     }
     chat->manager.peer.partial_handshake_msg = partial_handshake_msg;
+    if (chat->manager.room != nullptr) {
+        free(chat->manager.room);
+    }
+    chat->manager.room = room;
     sync_request(chat->local_client, join_msg, buffer);
     setup_keep_alive(&chat->manager, join_msg, chat->local_client);
     vector_str members = parse_join_names(buffer);

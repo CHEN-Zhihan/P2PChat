@@ -1,8 +1,9 @@
 #ifndef PEER_MANAGER_H
 #define PEER_MANAGER_H
 #include "common.h"
+#include "message.h"
+#include "network_manager.h"
 #include "peer.h"
-
 struct peer_manager_t {
     int server;
     struct connected_peer_t forward;
@@ -18,4 +19,5 @@ int connect_to_peer(struct peer_manager_t*, vector_peer_t);
 void send_msg(struct peer_manager_t*, char*);
 void close_connected_peers(struct peer_manager_t*);
 int handle_new_peer(struct peer_manager_t*);
+int handle_peer_message(struct peer_manager_t*, struct network_manager_t*, int);
 #endif  // PEER_MANAGER_H

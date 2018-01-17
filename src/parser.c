@@ -80,8 +80,9 @@ vector_peer_t parse_peers(char* msg) {
         while (msg[i] != ':') {
             ++i;
         }
-        char* port = strndup(msg + j, i - j);
-
+        char* port_str = strndup(msg + j, i - j);
+        int port;
+        sscanf(port_str, "%d", &port);
         temp.hash_id = hash(name, ip, port);
         temp.port = atoi(port);
         free(port);
@@ -94,5 +95,64 @@ vector_peer_t parse_peers(char* msg) {
 int parse_msgid(char* msg) {
     int result;
     sscanf(msg, "S:%d::\r\n", &result);
+    return result;
+}
+
+struct handshake_t parse_handshake(char* buffer) {
+    char username[BUFFER_SIZE];
+    char room[BUFFER_SIZE];
+    char ip[BUFFER_SIZE];
+    struct handshake_t result;
+    sscanf(buffer, "P:%s:%s:%s:%d:%d::\r\n", room, username, ip,
+           &result.peer.port, &result.msgid);
+    result.peer.ip = strdup(ip);
+    result.peer.room = strdup(room);
+    result.peer.name = strdup(username);
+    result.peer.hash_id =
+        hash(result.peer.name, result.peer.ip, result.peer.port);
+    return result;
+}
+
+struct message_t parse_message(char* buffer) {
+    struct message_t result;
+    int i = 2;
+    int j = i;
+    while (buffer[i] != ':') {
+        ++i;
+    }
+    result.room = strndup(buffer + j, i - j);
+    ++i;
+    j = i;
+    while (buffer[i] != ':') {
+        ++i;
+    }
+    char* hash_id = strndup(buffer + j, i - j);
+    sscanf(hash_id, "%ld", &result.hash_id);
+    free(hash_id);
+    ++i;
+    j = i;
+    while (buffer[i] != ':') {
+        ++i;
+    }
+    result.name = strndup(buffer + j, i - j);
+    ++i;
+    j = i;
+    while (buffer[i] != ':') {
+        ++i;
+    }
+    char* msgid = strndup(buffer + j, i - j);
+    sscanf(msgid, "%d", &result.msgid);
+    free(msgid);
+    ++i;
+    j = i;
+    while (buffer[i] != ':') {
+        ++i;
+    }
+    char* length = strndup(buffer + j, i - j);
+    int msglen = 0;
+    sscanf(length, "%d", &msglen);
+    free(length);
+    ++i;
+    result.content = strndup(buffer + i, msglen);
     return result;
 }

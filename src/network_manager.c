@@ -48,18 +48,17 @@ void* event_loop(void* m) {
                 }
             } else if (fd == manager->peer.server) {
                 int new_peer_fd = handle_new_peer(&manager->peer);
-                add_to_epoll(epoll, new_peer_fd);
-            } else if (fd == manager->peer.forward.soc) {
-                handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
-                             "remove from epoll failed");
-                free_connected_peer(&manager->peer.forward);
-                int new_fd = connect_to_peer(&manager->peer, manager->peers);
-                if (new_fd > 0) {
-                    add_to_epoll(epoll, new_fd);
+                if (new_peer_fd > 0) {
+                    add_to_epoll(epoll, new_peer_fd);
                 }
             } else {
-                int result = handle_peer_message(&manager->peer, fd);
-                if (result < 0) {
+                int result = handle_peer_message(&manager->peer, manager, fd);
+                if (result != 0) {
+                    handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
+                                 "remove from epoll failed");
+                    if (result > 0) {
+                        add_to_epoll(epoll, result);
+                    }
                 }
             }
         }
@@ -161,4 +160,5 @@ void update_member_list(struct network_manager_t* manager) {
         free_vector_peer(manager->peers);
     }
     manager->peers = peers;
+    sort_peers(manager->peers, 0, manager->peers.size);
 }

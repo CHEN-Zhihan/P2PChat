@@ -21,6 +21,7 @@ struct network_manager_t {
     struct peer_manager_t peer;
     struct socket_handler_t local;
     struct alive_keeper_t alive_keeper;
+    char* room;
     int local_server;
     int local_client;
     vector_peer_t peers;
