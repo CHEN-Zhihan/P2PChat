@@ -38,7 +38,7 @@
 #define VECTOR_ERASE(v, i, f)               \
     {                                       \
         int j = i;                          \
-        f(v.data[j]);                       \
+        f(&v.data[j]);                      \
         for (j = i; j != v.size - 1; ++j) { \
             v.data[j] = v.data[j + 1];      \
         }                                   \
@@ -85,7 +85,5 @@ typedef struct vector_str {
     int size;
     int capacity;
 } vector_str;
-
-USE_VECTOR(int);
 
 #endif  // VECTOR_H

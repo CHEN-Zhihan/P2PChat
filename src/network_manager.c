@@ -1,8 +1,13 @@
 #include "network_manager.h"
 #include <stdbool.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
+#include "chat_wrapper.h"
+#include "parser.h"
+#include "peer_manager.h"
 
 void setup_event_loop(struct network_manager_t*);
 void* event_loop(void*);
@@ -15,21 +20,21 @@ int setup_network(struct network_manager_t* manager, char* addr, char* local_ip,
                   int server_port, int local_port) {
     manager->server.fd = get_client_socket(addr, server_port);
     manager->local_server = get_server_socket(local_ip, 0);
-    int local_port = get_socket_port(manager->local_server);
+    int local_server_port = get_socket_port(manager->local_server);
     setup_peer_server(&manager->peer, local_ip, local_port);
     pthread_create(&manager->event_handler, nullptr, &event_loop,
                    (void*)manager);
-    return get_client_socket(local_ip, local_port);
+    return get_client_socket(local_ip, local_server_port);
 }
 
 void* event_loop(void* m) {
     struct network_manager_t* manager = (struct network_manager_t*)m;
     manager->local.fd = accept(manager->local_server, nullptr, nullptr);
     int epoll = epoll_create1(0);
-    add_to_epoll(epoll, local_handler);
+    add_to_epoll(epoll, manager->local.fd);
     add_to_epoll(epoll, manager->peer.server);
     static const int MAX_EVENTS = 10;
-    struct epoll_event event, events[MAX_EVENTS];
+    struct epoll_event events[MAX_EVENTS];
     while (true) {
         int available_number = 0, i = 0;
         available_number = epoll_wait(epoll, events, MAX_EVENTS, -1);
@@ -40,14 +45,14 @@ void* event_loop(void* m) {
             }
             int fd = events[i].data.fd;
             if (fd == manager->local.fd) {
-                int result = handle_local_message(&manager);
+                int result = handle_local_message(manager);
                 if (result < 0) {
                     break;
                 } else if (result > 0) {
                     add_to_epoll(epoll, result);
                 }
             } else if (fd == manager->peer.server) {
-                int new_peer_fd = handle_new_peer(&manager->peer);
+                int new_peer_fd = handle_new_peer(&manager->peer, manager);
                 if (new_peer_fd > 0) {
                     add_to_epoll(epoll, new_peer_fd);
                 }
@@ -132,6 +137,7 @@ void* keep_alive_loop(void* k) {
         async_request(alive_keeper->local_client, alive_keeper->join_msg);
     }
     sem_destroy(&alive_keeper->timeout);
+    return nullptr;
 }
 
 void compare_and_callback(vector_peer_t p1, vector_peer_t p2,
@@ -140,7 +146,7 @@ void compare_and_callback(vector_peer_t p1, vector_peer_t p2,
     for (i = 0; i != p1.size; ++i) {
         int j = 0;
         bool found = false;
-        for (j = 0; j != p2; size; ++j) {
+        for (j = 0; j != p2.size; ++j) {
             if (p1.data[i].hash_id == p2.data[j].hash_id) {
                 found = true;
                 break;
@@ -160,5 +166,16 @@ void update_member_list(struct network_manager_t* manager) {
         free_vector_peer(manager->peers);
     }
     manager->peers = peers;
-    sort_peers(manager->peers, 0, manager->peers.size);
+    sort_peers(&manager->peers, 0, manager->peers.size);
+}
+
+void check_and_update(struct network_manager_t* manager, long hash_id) {
+    if (!is_member(manager->peers, hash_id)) {
+        char* join_msg = strdup(manager->alive_keeper.join_msg);
+        join_msg[0] = 'J';
+        write(manager->server.fd, join_msg, strlen(manager->local.buffer));
+        read(manager->server.fd, manager->server.buffer, BUFFER_SIZE);
+        update_member_list(manager);
+        free(join_msg);
+    }
 }

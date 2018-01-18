@@ -1,5 +1,6 @@
 #include "peer.h"
 #include <string.h>
+#include <unistd.h>
 void free_peer(struct peer_t p) {
     free(p.name);
     free(p.ip);
@@ -48,10 +49,20 @@ struct connected_peer_t get_connected_peer(struct peer_t p, int soc,
                                            int msgid) {
     struct connected_peer_t result;
     result.soc = soc;
-    result.msgid = msgid;
+    result.peer.msgid = msgid;
     result.peer.hash_id = p.hash_id;
     result.peer.ip = strdup(p.ip);
     result.peer.name = strdup(p.name);
     result.peer.port = p.port;
     return result;
+}
+
+struct peer_t* find_peer(vector_peer_t peers, long hash_id) {
+    int i = 0;
+    for (i = 0; i != peers.size; ++i) {
+        if (peers.data[i].hash_id == hash_id) {
+            return &peers.data[i];
+        }
+    }
+    return nullptr;
 }

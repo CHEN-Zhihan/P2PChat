@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "common.h"
+#include "message.h"
 #include "vector.h"
 
 vector_str parse_do_list(char* msg) {
@@ -56,7 +57,7 @@ vector_peer_t parse_peers(char* msg) {
     vector_peer_t result;
     VECTOR_INIT(result);
     int i = 2;
-    member temp;
+    struct peer_t temp;
     while (msg[i + 1] != ':') {
         while (msg[i] != ':') {
             ++i;
@@ -80,13 +81,12 @@ vector_peer_t parse_peers(char* msg) {
         while (msg[i] != ':') {
             ++i;
         }
+        temp.msgid = 0;
         char* port_str = strndup(msg + j, i - j);
-        int port;
-        sscanf(port_str, "%d", &port);
-        temp.hash_id = hash(name, ip, port);
-        temp.port = atoi(port);
-        free(port);
-        VECTOR_PUSH_BACK(result, member, temp);
+        sscanf(port_str, "%d", &temp.port);
+        temp.hash_id = hash(name, ip, temp.port);
+        free(port_str);
+        VECTOR_STRUCT_PUSH_BACK(result, peer_t, temp);
         ++i;
     }
     return result;
@@ -106,7 +106,7 @@ struct handshake_t parse_handshake(char* buffer) {
     sscanf(buffer, "P:%s:%s:%s:%d:%d::\r\n", room, username, ip,
            &result.peer.port, &result.msgid);
     result.peer.ip = strdup(ip);
-    result.peer.room = strdup(room);
+    result.room = strdup(room);
     result.peer.name = strdup(username);
     result.peer.hash_id =
         hash(result.peer.name, result.peer.ip, result.peer.port);

@@ -4,9 +4,7 @@
 #include <semaphore.h>
 #include <stdbool.h>
 #include "network.h"
-
 #include "peer_manager.h"
-#include "server_manager.h"
 
 struct alive_keeper_t {
     char* join_msg;
@@ -28,9 +26,9 @@ struct network_manager_t {
     pthread_t event_handler;
 };
 
-void setup_network(struct network_manager_t*, char*, char*, int, int);
+int setup_network(struct network_manager_t*, char*, char*, int, int);
 void setup_keep_alive(struct network_manager_t*, char*, int);
 void network_manager_do_quit(struct network_manager_t*);
 void network_manager_do_send(struct network_manager_t*, char*);
-
+void check_and_update(struct network_manager_t*, long);
 #endif  // NETWORK_MANAGER_H

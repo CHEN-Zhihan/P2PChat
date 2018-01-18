@@ -44,3 +44,31 @@ char* build_handshake_msg(char* partial, int msgid) {
     snprintf(result, sizeof(*result) * size, "%s:%s::\r\n", partial, msg);
     return result;
 }
+
+void free_message(struct message_t m) {
+    free(m.content);
+    free(m.name);
+    free(m.room);
+}
+
+char* build_partial_send_msg(char* room, long hash_id, char* name) {
+    char id[100];
+    snprintf(id, 100, "%ld", hash_id);
+    size_t size = 2 + strlen(room) + 1 + strlen(id) + 1 + strlen(name) + 1;
+    char* result = malloc(sizeof(*result) * size);
+    snprintf(result, size, "T:%s:%s:%s", room, id, name);
+    return result;
+}
+
+char* build_send_msg(char* partial, int msgid, char* msg) {
+    char msgid_str[10];
+    snprintf(msgid_str, 10, "%d", msgid);
+    char msg_len[10];
+    snprintf(msg_len, 10, "%lu", strlen(msg));
+    size_t size = strlen(partial) + 1 + strlen(msgid_str) + 1 +
+                  strlen(msg_len) + strlen("::\r\n") + 1;
+    char* result = malloc(sizeof(*result) * size);
+    snprintf(result, size, "%s:%s:%s:%s::\r\n", partial, msgid_str, msg_len,
+             msg);
+    return result;
+}

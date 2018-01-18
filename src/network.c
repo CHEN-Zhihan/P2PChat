@@ -75,6 +75,14 @@ char* get_local_IP() {
 int get_socket_port(int fd) {
     struct sockaddr_in addr;
     socklen_t addrlen;
-    handle_error(getsockname(fd, &addr, &addrlen), "getsockname failed");
+    handle_error(getsockname(fd, (struct sockaddr*)&addr, &addrlen),
+                 "getsockname failed");
     return addr.sin_port;
 }
+
+void sync_request(int fd, char* send, char* buffer) {
+    write(fd, send, strlen(send));
+    read(fd, buffer, BUFFER_SIZE);
+}
+
+void async_request(int fd, char* send) { write(fd, send, strlen(send)); }

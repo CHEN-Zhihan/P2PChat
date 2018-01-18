@@ -1,15 +1,24 @@
 #include "peer_manager.h"
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <stdbool.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include "chat_wrapper.h"
+#include "network.h"
+#include "network_manager.h"
+#include "parser.h"
 int handshake(struct peer_manager_t*, int);
 bool is_member(vector_peer_t, long);
 int get_index_by_fd(vector_connected_peer_t, int);
 int get_last_msgid(vector_connected_peer_t, int);
-void update_msgid(struct peer_manager_t*, ) bool is_backward(
-    vector_connected_peer_t backwards, long hash_id) {
+void broadcast(struct peer_manager_t*, int, long, char*);
+bool is_backward(vector_connected_peer_t backwards, long hash_id) {
     int i = 0;
     for (i = 0; i != backwards.size; ++i) {
-        if (backwards.data[i].hash_id == hash_id) {
+        if (backwards.data[i].peer.hash_id == hash_id) {
             return true;
         }
     }
@@ -17,7 +26,7 @@ void update_msgid(struct peer_manager_t*, ) bool is_backward(
 }
 
 void setup_peer_server(struct peer_manager_t* peer, char* local_ip, int port) {
-    peer->handler.fd = get_server_socket(local_ip, port);
+    peer->server = get_server_socket(local_ip, port);
 }
 
 int connect_to_peer(struct peer_manager_t* peer, vector_peer_t peers) {
@@ -28,7 +37,7 @@ int connect_to_peer(struct peer_manager_t* peer, vector_peer_t peers) {
         }
     }
     i = (i + 1) % peers.size;
-    while (peer->my_hash_id != peers.data[i]) {
+    while (peer->my_hash_id != peers.data[i].hash_id) {
         if (!is_backward(peer->backwards, peers.data[i].hash_id)) {
             struct peer_t candidate = peers.data[i];
             int peer_soc = get_client_socket(candidate.ip, candidate.port);
@@ -67,9 +76,7 @@ int handshake(struct peer_manager_t* peer, int soc) {
 
 int handle_new_peer(struct peer_manager_t* peer,
                     struct network_manager_t* manager) {
-    struct sockaddr_in addr;
-    socklen_t size = sizeof(addr);
-    int new_fd = accept(peer->server, &addr, &size, 0);
+    int new_fd = accept(peer->server, nullptr, nullptr);
     char buffer[BUFFER_SIZE];
     read(new_fd, buffer, BUFFER_SIZE);
     struct handshake_t handshake_msg = parse_handshake(buffer);
@@ -79,22 +86,18 @@ int handle_new_peer(struct peer_manager_t* peer,
         free(handshake_msg.room);
         return -1;
     }
-    if (!is_member(manager->peers, handshake_msg.peer.hash_id)) {
-        char* join_msg = strdup(manager->alive_keeper.join_msg);
-        join_msg[0] = 'J';
-        write(manager->server.fd, join_msg, strlen(manager->local.buffer));
-        read(manager->server.fd, manager->server.buffer, BUFFER_SIZE);
-        update_member_list(manager);
-    }
+    check_and_update(manager, handshake_msg.peer.hash_id);
     if (!is_member(manager->peers, handshake_msg.peer.hash_id)) {
         close(new_fd);
         free_peer(handshake_msg.peer);
         free(handshake_msg.room);
         return -1;
     }
-    connected_peer_t p =
+    struct connected_peer_t p =
         get_connected_peer(handshake_msg.peer, new_fd, handshake_msg.msgid);
     VECTOR_STRUCT_PUSH_BACK(peer->backwards, connected_peer_t, p);
+    free(handshake_msg.room);
+    free_peer(handshake_msg.peer);
     return new_fd;
 }
 
@@ -122,24 +125,22 @@ int handle_peer_message(struct peer_manager_t* peer,
         }
     }
     struct message_t message = parse_message(peer->peer_buffer);
-    struct connected_peer_t* sender = find_sender(peer, message.hash_id);
-    int last_msgid = 0;
-    if (fd == peer->forward.soc) {
-        last_msgid = peer->forward.msgid;
-    } else {
-        last_msgid = get_last_msgid(peer->backwards, fd);
-    }
-    if (last_msgid > message.msgid) {
+    check_and_update(manager, message.hash_id);
+    struct peer_t* sender = find_peer(manager->peers, message.hash_id);
+    if (sender == nullptr) {
         return 0;
     }
-    update_msgid(peer, fd, message.msgid);
-    broadcast(peer, fd);
+    if (sender->msgid > message.msgid) {
+        return 0;
+    }
+    sender->msgid = message.msgid;
+    broadcast(peer, fd, message.msgid, peer->peer_buffer);
     callback_msg(message.name, message.content);
     free_message(message);
     return 0;
 }
 
-int get_index_by_id(vector_connected_peer_t backwards, int fd) {
+int get_index_by_fd(vector_connected_peer_t backwards, int fd) {
     int i = 0;
     for (i = 0; i != backwards.size; ++i) {
         if (backwards.data[i].soc == fd) {
@@ -149,12 +150,30 @@ int get_index_by_id(vector_connected_peer_t backwards, int fd) {
     return -1;
 }
 
-int get_last_msgid(vector_connected_peer_t backwards, int fd) {
+void broadcast(struct peer_manager_t* peer, int fd, long hash_id, char* msg) {
+    size_t length = strlen(msg);
+    if (peer->forward.soc != fd && peer->forward.peer.hash_id != hash_id) {
+        write(peer->forward.soc, msg, length);
+    }
     int i = 0;
-    for (i = 0; i != backwards.size; ++i) {
-        if (backwards.data[i].soc == fd) {
-            return backwards.data[i].msgid;
+    for (i = 0; i != peer->backwards.size; ++i) {
+        if (peer->backwards.data[i].soc != fd &&
+            peer->backwards.data[i].peer.hash_id != hash_id) {
+            write(peer->backwards.data[i].soc, msg, length);
         }
     }
-    return -1;
+}
+
+void send_msg(struct peer_manager_t* peer, char* msg) {
+    char* full_msg =
+        build_send_msg(peer->partial_send_msg, ++peer->msgid, msg + 2);
+    size_t length = strlen(full_msg);
+    if (peer->forward.soc != 0) {
+        write(peer->forward.soc, full_msg, length);
+    }
+    int i = 0;
+    for (i = 0; i != peer->backwards.size; ++i) {
+        write(peer->backwards.data[i].soc, full_msg, length);
+    }
+    free(full_msg);
 }

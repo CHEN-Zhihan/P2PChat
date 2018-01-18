@@ -24,6 +24,7 @@ if(PYTHON)
     set(OBSERVE_FORWARD 5)
     set(OBSERVE_BACKWARD 6)
     set(OBSERVE_LIST 7)
+    set(OBSERVE_JOIN 8)
 
     configure_file(${SETUP_PY_IN} ${SETUP_PY})
     configure_file(${P2PCHAT_PY_IN} ${P2PCHAT_PY})

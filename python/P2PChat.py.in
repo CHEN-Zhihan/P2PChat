@@ -16,7 +16,7 @@ OBSERVE_ERROR = ${OBSERVE_ERROR}
 OBSERVE_FORWARD = ${OBSERVE_FORWARD}
 OBSERVE_BACKWARD = ${OBSERVE_BACKWARD}
 OBSERVE_LIST = ${OBSERVE_LIST}
-
+OBSERVE_JOIN = ${OBSERVE_JOIN}
 
 # class P2PChat(object):
 #     """
@@ -237,6 +237,10 @@ class P2PChatUI(object):
                 for i in message[1]:
                     self._cmd(i)
                 self._cmd("[LIST] list all chatroom(s)")
+        elif message[0] == OBSERVE_JOIN:
+            self._cmd("[JOIN] joined room with members:")
+            for i in message[1]:
+                self._cmd(i)
 
 
 def main():

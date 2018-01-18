@@ -17,6 +17,7 @@
 #define OBSERVE_FORWARD ${OBSERVE_FORWARD}
 #define OBSERVE_BACKWARD ${OBSERVE_BACKWARD}
 #define OBSERVE_LIST ${OBSERVE_LIST}
+#define OBSERVE_JOIN ${OBSERVE_JOIN}
 
 
 void handle_error(int, const char*);

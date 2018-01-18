@@ -14,6 +14,6 @@ char* build_list_msg();
 char* build_handshake_msg(char*, int);
 char* build_partial_handshake_msg(char*, char*, char*, int);
 char* build_partial_send_msg(char*, long, char*);
-char* build_send_msg(char*, char*);
-
+char* build_send_msg(char*, int, char*);
+void free_message(struct message_t);
 #endif  // MESSAGE_H

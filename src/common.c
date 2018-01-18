@@ -13,7 +13,7 @@ void handle_error(int result, const char* msg) {
 
 long sdbm_hash(char* str) {
     long hash = 0;
-    int i = 0;
+    unsigned int i = 0;
     for (i = 0; i != strlen(str); ++i) {
         hash = str[i] + (hash << 6) + (hash << 16) - hash;
     }

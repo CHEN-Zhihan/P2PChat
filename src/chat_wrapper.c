@@ -29,7 +29,7 @@ static struct PyModuleDef chatDef = {PyModuleDef_HEAD_INIT, "chat", "", -1,
 PyMODINIT_FUNC PyInit_chat() { return PyModule_Create(&chatDef); }
 
 static PyObject* chat_do_user(PyObject* self, PyObject* args) {
-    const char* data;
+    char* data;
     int result;
     if (!PyArg_ParseTuple(args, "s", &data)) {
         return nullptr;
@@ -102,17 +102,36 @@ PyObject* build_observe_tuple(int flag, PyObject* o) {
     return result;
 }
 
-void callback_string(char* str, int flag) {
-    PyObject* result = PyUnicode_FromString(str);
-    PyObject* tuple = build_observe_tuple(flag, result);
-    PyObject* python_result = PyObject_Call(callback, nullptr, tuple);
+void callback_tuple(int flag, PyObject* o) {
+    PyObject* tuple = build_observe_tuple(flag, o);
+    PyObject* python_result = PyObject_Call(callback, tuple, nullptr);
     Py_DECREF(tuple);
     if (python_result == nullptr) {
-        fprintf(stderr, "[ERROR] callback_string failed");
+        fprintf(stderr, "[ERROR] callback tuple failed");
     }
     Py_DECREF(python_result);
+}
+
+void callback_string(char* str, int flag) {
+    PyObject* result = PyUnicode_FromString(str);
+    callback_tuple(flag, result);
 }
 
 void callback_remove(char* name) { callback_string(name, OBSERVE_REMOVE); }
 
 void callback_add(char* name) { callback_string(name, OBSERVE_ADD); }
+
+void callback_msg(char* name, char* msg) {
+    PyObject* tuple = PyTuple_New(2);
+    PyObject* sender = PyUnicode_FromString(name);
+    PyObject* message = PyUnicode_FromString(msg);
+    PyTuple_SetItem(tuple, 0, sender);
+    PyTuple_SetItem(tuple, 1, message);
+    callback_tuple(OBSERVE_MESSAGE, tuple);
+}
+
+void callback_join(vector_str names) {
+    PyObject* objects = to_py_string_list(names.data, names.size);
+    PyObject* tuple = build_observe_tuple(OBSERVE_JOIN, objects);
+    callback_tuple(OBSERVE_JOIN, tuple);
+}
