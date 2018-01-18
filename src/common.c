@@ -23,8 +23,8 @@ long sdbm_hash(char* str) {
 long hash(char* name, char* ip, int port) {
     char port_str[10];
     snprintf(port_str, 10, "%d", port);
-    char* hash_str = malloc(sizeof(*hash_str) *
-                            (strlen(port_str) + strlen(ip) + strlen(name) + 1));
+    char* hash_str = (char*)malloc(
+        sizeof(*hash_str) * (strlen(port_str) + strlen(ip) + strlen(name) + 1));
     strcpy(hash_str, name);
     strcat(hash_str, ip);
     strcat(hash_str, port_str);

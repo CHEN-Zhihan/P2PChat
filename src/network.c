@@ -24,8 +24,21 @@ int get_server_socket(const char* addr, int port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     handle_error(fd, "get server socket failed");
     struct sockaddr_in address = prepare_address(addr, port);
-    handle_error(bind(fd, (const struct sockaddr*)&address, sizeof(address)),
+    handle_error(bind(fd, (struct sockaddr*)&address, sizeof(address)),
                  "bind failed");
+    handle_error(listen(fd, 10), "listen failed");
+    return fd;
+}
+
+int get_server_socket_try_port(const char* addr, int* port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    handle_error(fd, "get server socket failed");
+    struct sockaddr_in address = prepare_address(addr, *port);
+    while (bind(fd, (struct sockaddr*)&address, sizeof(address)) == -1) {
+        *port = (*port + 1) % 65535;
+        address = prepare_address(addr, *port);
+    }
+    handle_error(listen(fd, 10), "listen failed");
     return fd;
 }
 
@@ -35,7 +48,7 @@ int get_client_socket(const char* addr, int port) {
     struct sockaddr_in address = prepare_address(addr, port);
     char error_msg[200];
     snprintf(error_msg, 200, "connect to %s:%d failed", addr, port);
-    handle_error(connect(fd, (const struct sockaddr*)&address, sizeof(address)),
+    handle_error(connect(fd, (struct sockaddr*)&address, sizeof(address)),
                  error_msg);
     return fd;
 }
@@ -77,7 +90,7 @@ int get_socket_port(int fd) {
     socklen_t addrlen;
     handle_error(getsockname(fd, (struct sockaddr*)&addr, &addrlen),
                  "getsockname failed");
-    return addr.sin_port;
+    return ntohs(addr.sin_port);
 }
 
 void sync_request(int fd, char* send, char* buffer) {

@@ -1,5 +1,5 @@
 from setuptools import setup, Extension
 sources = "${SOURCES}".split(';')
 chat = Extension("chat", sources=sources, include_dirs=[
-                 "${chat_BUILD_DIR}/include", "${chat_SOURCE_DIR}/include"])
+                 "${chat_BUILD_DIR}/include", "${chat_SOURCE_DIR}/include"], extra_compile_args=["-O0"])
 setup(name="chat", version="1.0", description="test", ext_modules=[chat])

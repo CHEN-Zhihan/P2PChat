@@ -1,8 +1,10 @@
 #include "network_manager.h"
+#include <errno.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 #include "chat_wrapper.h"
@@ -19,17 +21,22 @@ int handle_local_message(struct network_manager_t*);
 int setup_network(struct network_manager_t* manager, char* addr, char* local_ip,
                   int server_port, int local_port) {
     manager->server.fd = get_client_socket(addr, server_port);
-    manager->local_server = get_server_socket(local_ip, 0);
-    int local_server_port = get_socket_port(manager->local_server);
     setup_peer_server(&manager->peer, local_ip, local_port);
+    local_port = (local_port + 1) % 65535;
+    manager->local_server = get_server_socket_try_port(local_ip, &local_port);
     pthread_create(&manager->event_handler, nullptr, &event_loop,
                    (void*)manager);
-    return get_client_socket(local_ip, local_server_port);
+    return get_client_socket(local_ip, local_port);
 }
 
 void* event_loop(void* m) {
     struct network_manager_t* manager = (struct network_manager_t*)m;
     manager->local.fd = accept(manager->local_server, nullptr, nullptr);
+    if (manager->local.fd < 0) {
+        fprintf(stderr, "[ERROR] accept returns negative ones");
+        fprintf(stderr, "%d\t%s\n", errno == EINVAL, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
     int epoll = epoll_create1(0);
     add_to_epoll(epoll, manager->local.fd);
     add_to_epoll(epoll, manager->peer.server);

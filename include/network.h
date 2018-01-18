@@ -9,6 +9,7 @@ struct socket_handler_t {
 };
 
 int get_client_socket(const char*, int);
+int get_server_socket_try_port(const char*, int*);
 int get_server_socket(const char*, int);
 int get_socket_port(int);
 void make_non_block(int);
