@@ -1,10 +1,11 @@
 #include <Python.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 #include "chat.h"
 #include "vector.h"
 
 static struct chat_t chat;
-
+static pthread_mutex_t mutex;
 static PyObject* callback = nullptr;
 static PyObject* chat_do_user(PyObject* self, PyObject* args);
 static PyObject* chat_do_list(PyObject* self, PyObject* args);
@@ -66,6 +67,7 @@ static PyObject* chat_do_join(PyObject* self, PyObject* args) {
 }
 
 static PyObject* chat_set_callback(PyObject* self, PyObject* args) {
+    pthread_mutex_init(&mutex, nullptr);
     PyObject* result = nullptr;
     PyObject* temp = nullptr;
     if (PyArg_ParseTuple(args, "O:setCallback", &temp)) {
@@ -75,11 +77,14 @@ static PyObject* chat_set_callback(PyObject* self, PyObject* args) {
         }
         Py_XINCREF(temp);
         Py_XDECREF(callback);
+        callback = temp;
         Py_INCREF(Py_None);
         result = Py_None;
     }
     return result;
 }
+
+void setup_python_threads() { PyEval_InitThreads(); }
 
 PyObject* to_py_string_list(char** list, int s) {
     PyObject* result = PyList_New(s);
@@ -104,17 +109,23 @@ PyObject* build_observe_tuple(int flag, PyObject* o) {
 
 void callback_tuple(int flag, PyObject* o) {
     PyObject* tuple = build_observe_tuple(flag, o);
-    PyObject* python_result = PyObject_Call(callback, tuple, nullptr);
-    Py_DECREF(tuple);
+    PyObject* args = PyTuple_New(1);
+    PyTuple_SetItem(args, 0, tuple);
+    PyObject* python_result = PyObject_Call(callback, args, nullptr);
+    Py_DECREF(args);
     if (python_result == nullptr) {
         fprintf(stderr, "[ERROR] callback tuple failed");
+        exit(EXIT_FAILURE);
     }
     Py_DECREF(python_result);
 }
 
 void callback_string(char* str, int flag) {
+    PyGILState_STATE state;
+    state = PyGILState_Ensure();
     PyObject* result = PyUnicode_FromString(str);
     callback_tuple(flag, result);
+    PyGILState_Release(state);
 }
 
 void callback_remove(char* name) { callback_string(name, OBSERVE_REMOVE); }
@@ -122,16 +133,22 @@ void callback_remove(char* name) { callback_string(name, OBSERVE_REMOVE); }
 void callback_add(char* name) { callback_string(name, OBSERVE_ADD); }
 
 void callback_msg(char* name, char* msg) {
+    PyGILState_STATE state;
+    state = PyGILState_Ensure();
     PyObject* tuple = PyTuple_New(2);
     PyObject* sender = PyUnicode_FromString(name);
     PyObject* message = PyUnicode_FromString(msg);
     PyTuple_SetItem(tuple, 0, sender);
     PyTuple_SetItem(tuple, 1, message);
     callback_tuple(OBSERVE_MESSAGE, tuple);
+    PyGILState_Release(state);
 }
 
 void callback_join(vector_str names) {
+    int i = 0;
+    for (i = 0; i != names.size; ++i) {
+        fprintf(stderr, "[DEBUG] %s\n", names.data[i]);
+    }
     PyObject* objects = to_py_string_list(names.data, names.size);
-    PyObject* tuple = build_observe_tuple(OBSERVE_JOIN, objects);
-    callback_tuple(OBSERVE_JOIN, tuple);
+    callback_tuple(OBSERVE_JOIN, objects);
 }

@@ -83,7 +83,9 @@ class P2PChatUI(object):
         self._first = True
         win = Tk()
         win.title("MyP2PChat")
-
+        def callback(message):
+            self.update(message)
+        chat.set_callback(callback)
         # Top Frame for Message display
         topframe = Frame(win, relief=RAISED, borderwidth=1)
         topframe.pack(fill=BOTH, expand=True)
@@ -218,6 +220,7 @@ class P2PChatUI(object):
         """
         Print updated information.
         """
+        print("[DEBUG] received in Python: {}".format(message))
         if message[0] == OBSERVE_ADD:
             self._cmd("[ROOM] user {} joined".format(message[1]))
         elif message[0] == OBSERVE_REMOVE:
@@ -249,9 +252,7 @@ def main():
         sys.exit(2)
     ui = P2PChatUI(sys.argv)
 
-    def callback(message):
-        ui.update(message)
-    chat.set_callback(callback)
+
 
 
 if __name__ == "__main__":

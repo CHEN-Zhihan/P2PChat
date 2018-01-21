@@ -22,7 +22,8 @@ void setup(struct chat_t* chat, char* ip, int server_port, int local_port) {
 
 vector_str do_list(struct chat_t* chat) {
     char buffer[BUFFER_SIZE];
-    sync_request(chat->local_client, build_list_msg(), buffer);
+    memset(buffer, 0, BUFFER_SIZE);
+    sync_request(chat->local_client, "L::\r\n", buffer);
     return parse_do_list(buffer);
 }
 

@@ -11,16 +11,17 @@ vector_str parse_do_list(char* msg) {
     if (msg[2] == ':') {
         return result;
     }
-    int i = 1;
-    while (msg[i + 1] != ':') {
+    int i = 2;
+    while (msg[i] != ':') {
         int j = i;
-        while (msg[i + 1] != ':') {
+        while (msg[i] != ':') {
             ++i;
         }
         char* group = malloc(sizeof(*group) * (i - j + 1));
-        strncpy(group, msg + i + 1, i - j);
+        strncpy(group, msg + j, i - j);
         group[i - j] = '\0';
         VECTOR_PUSH_BACK(result, char*, group);
+        ++i;
     }
     return result;
 }
@@ -28,12 +29,12 @@ vector_str parse_do_list(char* msg) {
 vector_str parse_join_names(char* msg) {
     vector_str result;
     VECTOR_INIT(result);
-    int i = 3;
+    int i = 2;
     while (msg[i] != ':') {
-        while (msg[i] != ':') {
-            ++i;
-        }
         ++i;
+    }
+    ++i;
+    while (msg[i] != ':') {
         int j = i;
         while (msg[i] != ':') {
             ++i;
@@ -58,11 +59,11 @@ vector_peer_t parse_peers(char* msg) {
     VECTOR_INIT(result);
     int i = 2;
     struct peer_t temp;
-    while (msg[i + 1] != ':') {
-        while (msg[i] != ':') {
-            ++i;
-        }
+    while (msg[i] != ':') {
         ++i;
+    }
+    ++i;
+    while (msg[i] != ':') {
         int j = i;
         while (msg[i] != ':') {
             ++i;

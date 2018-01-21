@@ -15,7 +15,7 @@ void setup_event_loop(struct network_manager_t*);
 void* event_loop(void*);
 void* keep_alive_loop(void*);
 void add_to_epoll(int, int);
-void update_member_list(struct network_manager_t*);
+void update_member_list(struct network_manager_t*, bool);
 int handle_local_message(struct network_manager_t*);
 
 int setup_network(struct network_manager_t* manager, char* addr, char* local_ip,
@@ -24,6 +24,7 @@ int setup_network(struct network_manager_t* manager, char* addr, char* local_ip,
     setup_peer_server(&manager->peer, local_ip, local_port);
     local_port = (local_port + 1) % 65535;
     manager->local_server = get_server_socket_try_port(local_ip, &local_port);
+    setup_python_threads();
     pthread_create(&manager->event_handler, nullptr, &event_loop,
                    (void*)manager);
     return get_client_socket(local_ip, local_port);
@@ -44,6 +45,7 @@ void* event_loop(void* m) {
     struct epoll_event events[MAX_EVENTS];
     while (true) {
         int available_number = 0, i = 0;
+        fprintf(stderr, "[LOCAL] waiting at epoll\n");
         available_number = epoll_wait(epoll, events, MAX_EVENTS, -1);
         for (i = 0; i != available_number; ++i) {
             uint32_t e = events[i].events;
@@ -52,6 +54,7 @@ void* event_loop(void* m) {
             }
             int fd = events[i].data.fd;
             if (fd == manager->local.fd) {
+                fprintf(stderr, "[LOCAL] handling local message\n");
                 int result = handle_local_message(manager);
                 if (result < 0) {
                     break;
@@ -59,13 +62,16 @@ void* event_loop(void* m) {
                     add_to_epoll(epoll, result);
                 }
             } else if (fd == manager->peer.server) {
+                fprintf(stderr, "[LOCAL] handling new peer\n");
                 int new_peer_fd = handle_new_peer(&manager->peer, manager);
                 if (new_peer_fd > 0) {
                     add_to_epoll(epoll, new_peer_fd);
                 }
             } else {
+                fprintf(stderr, "[LOCAL] handling peer message");
                 int result = handle_peer_message(&manager->peer, manager, fd);
                 if (result != 0) {
+                    fprintf(stderr, "[LOCAL] remove %d from epoll", fd);
                     handle_error(epoll_ctl(epoll, EPOLL_CTL_DEL, fd, nullptr),
                                  "remove from epoll failed");
                     if (result > 0) {
@@ -92,6 +98,7 @@ void add_to_epoll(int epoll, int fd) {
 
 int handle_local_message(struct network_manager_t* manager) {
     read(manager->local.fd, manager->local.buffer, BUFFER_SIZE);
+    fprintf(stderr, "[LOCAL] received: *%s*\n", manager->local.buffer);
     char request_flag = manager->local.buffer[0];
     int result = 0;
     if (request_flag == 'Q') {
@@ -101,22 +108,26 @@ int handle_local_message(struct network_manager_t* manager) {
         if (request_flag == 'A') {
             manager->local.buffer[0] = 'J';
         }
-        write(manager->server.fd, manager->local.buffer,
-              strlen(manager->local.buffer));
-        read(manager->server.fd, manager->server.buffer, BUFFER_SIZE);
+        fprintf(stderr, "[SERVER] sent to %d: *%s*\n", manager->server.fd,
+                manager->local.buffer);
+        sync_request(manager->server.fd, manager->local.buffer,
+                     manager->server.buffer);
+        fprintf(stderr, "[SERVER] receive: *%s*\n", manager->server.buffer);
         if (request_flag == 'L' || request_flag == 'J') {
             write(manager->local.fd, manager->server.buffer,
                   strlen(manager->server.buffer));
         }
         if (request_flag == 'A' || request_flag == 'J') {
-            update_member_list(manager);
+            update_member_list(manager, request_flag == 'A');
         }
         if (request_flag == 'J') {
             result = connect_to_peer(&manager->peer, manager->peers);
         }
+        memset(manager->server.buffer, 0, BUFFER_SIZE);
     } else if (request_flag == 'T') {
         send_msg(&manager->peer, manager->local.buffer);
     }
+    memset(manager->local.buffer, 0, BUFFER_SIZE);
     return result;
 }
 
@@ -125,6 +136,7 @@ void setup_keep_alive(struct network_manager_t* manager, char* join_msg,
     manager->alive_keeper.join_msg = join_msg;
     manager->alive_keeper.join_msg[0] = 'A';
     manager->alive_keeper.local_client = soc;
+    manager->alive_keeper.running = true;
     sem_init(&manager->alive_keeper.timeout, 0, 0);
     pthread_create(&manager->alive_keeper.monitor, nullptr, &keep_alive_loop,
                    (void*)&manager->alive_keeper);
@@ -137,7 +149,9 @@ void* keep_alive_loop(void* k) {
         handle_error(clock_gettime(CLOCK_REALTIME, &ts),
                      "clock_gettime failed");
         ts.tv_sec += 20;
+        fprintf(stderr, "[DEBUG] waiting at keep_alive\n");
         sem_timedwait(&alive_keeper->timeout, &ts);
+        fprintf(stderr, "[DEBUG] keep_alive wake up\n");
         if (!alive_keeper->running) {
             break;
         }
@@ -165,10 +179,12 @@ void compare_and_callback(vector_peer_t p1, vector_peer_t p2,
     }
 }
 
-void update_member_list(struct network_manager_t* manager) {
+void update_member_list(struct network_manager_t* manager, bool inform) {
     vector_peer_t peers = parse_peers(manager->server.buffer);
-    compare_and_callback(manager->peers, peers, &callback_remove);
-    compare_and_callback(peers, manager->peers, &callback_add);
+    if (inform) {
+        compare_and_callback(manager->peers, peers, &callback_remove);
+        compare_and_callback(peers, manager->peers, &callback_add);
+    }
     if (manager->peers.size != 0) {
         free_vector_peer(manager->peers);
     }
@@ -180,9 +196,12 @@ void check_and_update(struct network_manager_t* manager, long hash_id) {
     if (!is_member(manager->peers, hash_id)) {
         char* join_msg = strdup(manager->alive_keeper.join_msg);
         join_msg[0] = 'J';
-        write(manager->server.fd, join_msg, strlen(manager->local.buffer));
-        read(manager->server.fd, manager->server.buffer, BUFFER_SIZE);
-        update_member_list(manager);
+        fprintf(stderr, "[SERVER]@check_and_update sent to : %d *%s*\n",
+                manager->server.fd, join_msg);
+        sync_request(manager->server.fd, join_msg, manager->server.buffer);
+        fprintf(stderr, "[SERVER]@check_and_update received: *%s*\n",
+                manager->server.buffer);
+        update_member_list(manager, true);
         free(join_msg);
     }
 }

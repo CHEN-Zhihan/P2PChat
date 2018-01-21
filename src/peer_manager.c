@@ -40,6 +40,8 @@ int connect_to_peer(struct peer_manager_t* peer, vector_peer_t peers) {
     while (peer->my_hash_id != peers.data[i].hash_id) {
         if (!is_backward(peer->backwards, peers.data[i].hash_id)) {
             struct peer_t candidate = peers.data[i];
+            fprintf(stderr, "[PEER] sending request to %s:%d\n", candidate.ip,
+                    candidate.port);
             int peer_soc = get_client_socket(candidate.ip, candidate.port);
             if (peer_soc > 0) {
                 int result = handshake(peer, peer_soc);
@@ -78,7 +80,9 @@ int handle_new_peer(struct peer_manager_t* peer,
                     struct network_manager_t* manager) {
     int new_fd = accept(peer->server, nullptr, nullptr);
     char buffer[BUFFER_SIZE];
+    fprintf(stderr, "[PEER] waiting for peer handshake\n");
     read(new_fd, buffer, BUFFER_SIZE);
+    fprintf(stderr, "[PEER] peer handshake received\n");
     struct handshake_t handshake_msg = parse_handshake(buffer);
     if (!strcmp(manager->room, handshake_msg.room)) {
         close(new_fd);
