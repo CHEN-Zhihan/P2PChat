@@ -7,7 +7,7 @@ struct peer_t {
     char* name;
     char* ip;
     int port;
-    long hash_id;
+    unsigned long hash_id;
     int msgid;
 };
 
@@ -23,7 +23,7 @@ void free_peer(struct peer_t p);
 void free_connected_peer(struct connected_peer_t*);
 struct connected_peer_t get_connected_peer(struct peer_t, int, int);
 void free_vector_peer(vector_peer_t peers);
-struct peer_t* find_peer(vector_peer_t, long);
+struct peer_t* find_peer(vector_peer_t, unsigned long);
 int partition(vector_peer_t* v, int begin, int end);
 
 void sort_peers(vector_peer_t* v, int begin, int end);

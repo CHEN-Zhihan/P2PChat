@@ -86,6 +86,8 @@ vector_peer_t parse_peers(char* msg) {
         char* port_str = strndup(msg + j, i - j);
         sscanf(port_str, "%d", &temp.port);
         temp.hash_id = hash(name, ip, temp.port);
+        fprintf(stderr, "[DEBUG] parse members: %s %s %d %lu\n", name, ip,
+                temp.port, temp.hash_id);
         free(port_str);
         VECTOR_STRUCT_PUSH_BACK(result, peer_t, temp);
         ++i;
@@ -104,8 +106,9 @@ struct handshake_t parse_handshake(char* buffer) {
     char room[BUFFER_SIZE];
     char ip[BUFFER_SIZE];
     struct handshake_t result;
-    sscanf(buffer, "P:%s:%s:%s:%d:%d::\r\n", room, username, ip,
-           &result.peer.port, &result.msgid);
+    handle_error(sscanf(buffer, "P:%[^:]:%[^:]:%[^:]:%d:%d::\r\n", room,
+                        username, ip, &result.peer.port, &result.msgid),
+                 "sscanf failed");
     result.peer.ip = strdup(ip);
     result.room = strdup(room);
     result.peer.name = strdup(username);
@@ -128,7 +131,7 @@ struct message_t parse_message(char* buffer) {
         ++i;
     }
     char* hash_id = strndup(buffer + j, i - j);
-    sscanf(hash_id, "%ld", &result.hash_id);
+    sscanf(hash_id, "%lu", &result.hash_id);
     free(hash_id);
     ++i;
     j = i;

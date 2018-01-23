@@ -147,7 +147,7 @@ class P2PChatUI(object):
         """
         message = self.userentry.get()
         if len(message) > 0:
-            result = chat.doSend(message)
+            result = chat.do_send(message)
             if result == UNJOINED_EXCEPTION:
                 self._cmd("[ERROR] Cannot send before JOIN")
             elif result == REMOTE_EXCEPTION:

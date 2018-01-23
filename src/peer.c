@@ -57,7 +57,7 @@ struct connected_peer_t get_connected_peer(struct peer_t p, int soc,
     return result;
 }
 
-struct peer_t* find_peer(vector_peer_t peers, long hash_id) {
+struct peer_t* find_peer(vector_peer_t peers, unsigned long hash_id) {
     int i = 0;
     for (i = 0; i != peers.size; ++i) {
         if (peers.data[i].hash_id == hash_id) {

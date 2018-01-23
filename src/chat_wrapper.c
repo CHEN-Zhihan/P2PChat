@@ -9,6 +9,7 @@ static pthread_mutex_t mutex;
 static PyObject* callback = nullptr;
 static PyObject* chat_do_user(PyObject* self, PyObject* args);
 static PyObject* chat_do_list(PyObject* self, PyObject* args);
+static PyObject* chat_do_send(PyObject*, PyObject*);
 static PyObject* chat_set_callback(PyObject* self, PyObject* args);
 static PyObject* chat_setup(PyObject* self, PyObject* args);
 static PyObject* chat_do_join(PyObject* self, PyObject* args);
@@ -21,6 +22,7 @@ static PyMethodDef Methods[] = {
     {"do_list", chat_do_list, METH_VARARGS, "gg"},
     {"set_callback", chat_set_callback, METH_VARARGS, "gg"},
     {"do_join", chat_do_join, METH_VARARGS, "no help"},
+    {"do_send", chat_do_send, METH_VARARGS, "no help"},
     {"setup", chat_setup, METH_VARARGS, "gg"},
     {nullptr, nullptr, 0, nullptr}};
 
@@ -28,6 +30,16 @@ static struct PyModuleDef chatDef = {PyModuleDef_HEAD_INIT, "chat", "", -1,
                                      Methods};
 
 PyMODINIT_FUNC PyInit_chat() { return PyModule_Create(&chatDef); }
+
+static PyObject* chat_do_send(PyObject* self, PyObject* args) {
+    char* data;
+    int result = 0;
+    if (!PyArg_ParseTuple(args, "s", &data)) {
+        return nullptr;
+    }
+    result = do_send(&chat, data);
+    return Py_BuildValue("i", result);
+}
 
 static PyObject* chat_do_user(PyObject* self, PyObject* args) {
     char* data;

@@ -94,12 +94,8 @@ int get_socket_port(int fd) {
 }
 
 void sync_request(int fd, char* send, char* buffer) {
-    write(fd, send, strlen(send));
+    write(fd, send, strlen(send) + 1);
     read(fd, buffer, BUFFER_SIZE);
 }
 
-void async_request(int fd, char* send) {
-    fprintf(stderr, "[ASYNC] writing *%s* to %d\n", send, fd);
-    write(fd, send, strlen(send));
-    fprintf(stderr, "[ASYNC] completed\n");
-}
+void async_request(int fd, char* send) { write(fd, send, strlen(send) + 1); }

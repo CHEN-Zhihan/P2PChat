@@ -11,8 +11,8 @@ void handle_error(int result, const char* msg) {
     }
 }
 
-long sdbm_hash(char* str) {
-    long hash = 0;
+unsigned long sdbm_hash(char* str) {
+    unsigned long hash = 0;
     unsigned int i = 0;
     for (i = 0; i != strlen(str); ++i) {
         hash = str[i] + (hash << 6) + (hash << 16) - hash;
@@ -20,7 +20,7 @@ long sdbm_hash(char* str) {
     return hash & 0xFFFFFFFFFFFFFFFF;
 }
 
-long hash(char* name, char* ip, int port) {
+unsigned long hash(char* name, char* ip, int port) {
     char port_str[10];
     snprintf(port_str, 10, "%d", port);
     char* hash_str = (char*)malloc(
@@ -28,7 +28,7 @@ long hash(char* name, char* ip, int port) {
     strcpy(hash_str, name);
     strcat(hash_str, ip);
     strcat(hash_str, port_str);
-    long result = sdbm_hash(hash_str);
+    unsigned long result = sdbm_hash(hash_str);
     free(hash_str);
     return result;
 }

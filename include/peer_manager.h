@@ -13,7 +13,7 @@ struct peer_manager_t {
     char peer_buffer[BUFFER_SIZE];
     vector_connected_peer_t backwards;
     int msgid;
-    long my_hash_id;
+    unsigned long my_hash_id;
     char* partial_handshake_msg;
     char* partial_send_msg;
 };
@@ -24,5 +24,5 @@ void send_msg(struct peer_manager_t*, char*);
 void close_connected_peers(struct peer_manager_t*);
 int handle_new_peer(struct peer_manager_t*, struct network_manager_t*);
 int handle_peer_message(struct peer_manager_t*, struct network_manager_t*, int);
-bool is_member(vector_peer_t, long);
+bool is_member(vector_peer_t, unsigned long);
 #endif  // PEER_MANAGER_H

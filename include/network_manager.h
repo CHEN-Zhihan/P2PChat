@@ -30,5 +30,5 @@ int setup_network(struct network_manager_t*, char*, char*, int, int);
 void setup_keep_alive(struct network_manager_t*, char*, int);
 void network_manager_do_quit(struct network_manager_t*);
 void network_manager_do_send(struct network_manager_t*, char*);
-void check_and_update(struct network_manager_t*, long);
+void check_and_update(struct network_manager_t*, unsigned long);
 #endif  // NETWORK_MANAGER_H
