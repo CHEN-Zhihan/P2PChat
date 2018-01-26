@@ -3,6 +3,7 @@
         "python.h": "c",
         "stdio.h": "c",
         "errno.h": "c",
-        "network.h": "c"
+        "network.h": "c",
+        "*.in": "c"
     }
 }

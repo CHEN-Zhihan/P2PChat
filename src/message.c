@@ -66,7 +66,7 @@ char* build_send_msg(char* partial, int msgid, char* msg) {
     char msg_len[10];
     snprintf(msg_len, 10, "%lu", strlen(msg));
     size_t size = strlen(partial) + 1 + strlen(msgid_str) + 1 +
-                  strlen(msg_len) + strlen("::\r\n") + 1;
+                  strlen(msg_len) + 1 + strlen(msg) + strlen("::\r\n") + 1;
     char* result = malloc(sizeof(*result) * size);
     snprintf(result, size, "%s:%s:%s:%s::\r\n", partial, msgid_str, msg_len,
              msg);

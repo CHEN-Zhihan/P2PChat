@@ -83,6 +83,7 @@ class P2PChatUI(object):
         self._first = True
         win = Tk()
         win.title("MyP2PChat")
+
         def callback(message):
             self.update(message)
         chat.set_callback(callback)
@@ -226,7 +227,7 @@ class P2PChatUI(object):
         elif message[0] == OBSERVE_REMOVE:
             self._cmd("[ROOM] user {} left".format(message[1]))
         elif message[0] == OBSERVE_MESSAGE:
-            self._msg(message[2], message[1])
+            self._msg(message[1][0], message[1][1])
         elif message[0] == OBSERVE_ERROR:
             self._cmd(message[1])
         elif message[0] == OBSERVE_FORWARD:
@@ -251,8 +252,6 @@ def main():
         print("P2PChat.py <server address> <server port no.> <my port no.>")
         sys.exit(2)
     ui = P2PChatUI(sys.argv)
-
-
 
 
 if __name__ == "__main__":

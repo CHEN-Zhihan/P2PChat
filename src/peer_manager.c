@@ -27,6 +27,7 @@ bool is_backward(vector_connected_peer_t backwards, unsigned long hash_id) {
 
 void setup_peer_server(struct peer_manager_t* peer, char* local_ip, int port) {
     peer->server = get_server_socket(local_ip, port);
+    VECTOR_INIT(peer->backwards);
 }
 
 int connect_to_peer(struct peer_manager_t* peer, vector_peer_t peers) {
@@ -51,7 +52,8 @@ int connect_to_peer(struct peer_manager_t* peer, vector_peer_t peers) {
                     }
                     peer->forward =
                         get_connected_peer(candidate, peer_soc, result);
-                    fprintf(stderr, "[PEER] %s added as forward\n", peers.data[i].name);
+                    fprintf(stderr, "[PEER] %s added as forward\n",
+                            peers.data[i].name);
                     return peer_soc;
                 }
                 fprintf(stderr, "[DEBUG] handshake failed\n");
@@ -163,7 +165,8 @@ int get_index_by_fd(vector_connected_peer_t backwards, int fd) {
     return -1;
 }
 
-void broadcast(struct peer_manager_t* peer, int fd, unsigned long hash_id, char* msg) {
+void broadcast(struct peer_manager_t* peer, int fd, unsigned long hash_id,
+               char* msg) {
     size_t length = strlen(msg) + 1;
     if (peer->forward.soc != fd && peer->forward.peer.hash_id != hash_id) {
         write(peer->forward.soc, msg, length);

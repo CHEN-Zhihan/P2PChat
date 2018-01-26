@@ -86,8 +86,6 @@ vector_peer_t parse_peers(char* msg) {
         char* port_str = strndup(msg + j, i - j);
         sscanf(port_str, "%d", &temp.port);
         temp.hash_id = hash(name, ip, temp.port);
-        fprintf(stderr, "[DEBUG] parse members: %s %s %d %lu\n", name, ip,
-                temp.port, temp.hash_id);
         free(port_str);
         VECTOR_STRUCT_PUSH_BACK(result, peer_t, temp);
         ++i;

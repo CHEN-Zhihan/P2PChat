@@ -1,6 +1,7 @@
 #ifndef VECTOR_H
 #define VECTOR_H
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #define USE_VECTOR(type)           \
@@ -18,44 +19,44 @@
     } vector_##type;
 
 #define VECTOR_PUSH_BACK(v, type, element)                                   \
-    {                                                                        \
+    do {                                                                     \
         type t = (element);                                                  \
         if (v.size == v.capacity) {                                          \
             v.data = realloc(v.data, (v.capacity *= 2) * sizeof(*(v.data))); \
         }                                                                    \
         v.data[v.size++] = t;                                                \
-    }
+    } while (0);
 
-#define VECTOR_STRUCT_PUSH_BACK(v, type, element)                            \
-    {                                                                        \
-        struct type t = (element);                                           \
-        if (v.size == v.capacity) {                                          \
-            v.data = realloc(v.data, (v.capacity *= 2) * sizeof(*(v.data))); \
-        }                                                                    \
-        v.data[v.size++] = t;                                                \
-    }
+#define VECTOR_STRUCT_PUSH_BACK(v, type, element)                              \
+    do {                                                                       \
+        struct type __t = (element);                                           \
+        if (v.size == v.capacity) {                                            \
+            v.data = realloc(v.data, (v.capacity *= 2) * sizeof(struct type)); \
+        }                                                                      \
+        v.data[v.size++] = __t;                                                \
+    } while (0);
 
 #define VECTOR_ERASE(v, i, f)               \
-    {                                       \
+    do {                                    \
         int j = i;                          \
         f(&v.data[j]);                      \
         for (j = i; j != v.size - 1; ++j) { \
             v.data[j] = v.data[j + 1];      \
         }                                   \
         --v.size;                           \
-    }
+    } while (0);
 
-#define VECTOR_INIT_CAPACITY(v, i)              \
-    {                                           \
-        int n = (i);                            \
-        v.data = malloc(n * sizeof(*(v.data))); \
-        if (!v.data) {                          \
-            fputs("malloc failed\n", stderr);   \
-            abort();                            \
-        }                                       \
-        v.size = 0;                             \
-        v.capacity = n;                         \
-    }
+#define VECTOR_INIT_CAPACITY(v, i)             \
+    do {                                       \
+        int n = i;                             \
+        v.data = calloc(n, sizeof(*(v.data))); \
+        if (!v.data) {                         \
+            fputs("malloc failed\n", stderr);  \
+            abort();                           \
+        }                                      \
+        v.size = 0;                            \
+        v.capacity = n;                        \
+    } while (0);
 
 #define VECTOR_INIT(v) VECTOR_INIT_CAPACITY(v, 1)
 

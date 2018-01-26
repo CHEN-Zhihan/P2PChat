@@ -55,13 +55,6 @@ static PyObject* apitest_set_callback(PyObject* self, PyObject* args) {
         Py_XDECREF(callback);
         callback = temp;
         Py_INCREF(Py_None);
-        ++xxx;
-        char* str = malloc(sizeof(char) * 5);
-        str[0] = '6';
-        str[1] = '5';
-        str[2] = '\0';
-        callback_add(str);
-        callback_add(str);
         result = Py_None;
     }
     return result;

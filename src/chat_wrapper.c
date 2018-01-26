@@ -157,10 +157,6 @@ void callback_msg(char* name, char* msg) {
 }
 
 void callback_join(vector_str names) {
-    int i = 0;
-    for (i = 0; i != names.size; ++i) {
-        fprintf(stderr, "[DEBUG] %s\n", names.data[i]);
-    }
     PyObject* objects = to_py_string_list(names.data, names.size);
     callback_tuple(OBSERVE_JOIN, objects);
 }
